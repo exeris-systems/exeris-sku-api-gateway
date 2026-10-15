@@ -4,9 +4,9 @@ import eu.exeris.caps.breaker.api.CallOutcome;
 import eu.exeris.caps.breaker.api.CircuitBreaker;
 import eu.exeris.caps.breaker.api.CircuitBreakerLimitExceededException;
 import eu.exeris.caps.breaker.api.CircuitBreakerRegistry;
-import eu.exeris.caps.breaker.api.Permit;
+import eu.exeris.caps.breaker.api.Permits;
 import eu.exeris.caps.routing.api.RequestRouter;
-import eu.exeris.caps.routing.api.RouteMatch;
+import eu.exeris.caps.routing.api.RouteLookup;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpHeader;
@@ -22,15 +22,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 /**
  * Guards the routes with one circuit breaker each.
  *
  * <p>This is the whole of the SKU's use of the circuit-breaker capability, kept in one class: it asks the
- * breaker of the matched route for a {@link Permit}, answers {@code 503} itself when the circuit refuses,
- * and otherwise reports the response the request ends with against that same permit. The permit lives in
- * the call, not between calls, so a request that ends any way at all leaves nothing behind.
+ * breaker of the matched route for a permit, answers {@code 503} itself when the circuit refuses, and
+ * otherwise reports the response the request ends with against that same permit. The permit is a primitive
+ * {@code long} that lives in the call, not between calls, so a request that ends any way at all leaves
+ * nothing behind.
+ *
+ * <p>The route is found with a {@link RouteLookup} that each thread keeps and reuses, so matching allocates
+ * nothing in steady state. An admitted request allocates its guarded exchange; the outcome it reports is a
+ * preallocated value for every status code.
  *
  * <p>A request that matches no route has no breaker: the number of breakers is bounded by the route table,
  * never by what clients send.
@@ -40,10 +45,22 @@ public final class CircuitBreakerIngress implements HttpHandler {
     private static final byte[] SERVICE_UNAVAILABLE_BODY =
             "{\"error\":\"Service Unavailable\",\"circuit\":\"OPEN\"}".getBytes(StandardCharsets.UTF_8);
 
+    private static final CallOutcome TRANSPORT_ERROR = CallOutcome.transportError();
+    private static final int FIRST_STATUS = 100;
+    private static final CallOutcome[] RESPONSE_OUTCOMES = new CallOutcome[500];
+
+    static {
+        for (int i = 0; i < RESPONSE_OUTCOMES.length; i++) {
+            RESPONSE_OUTCOMES[i] = CallOutcome.response(FIRST_STATUS + i);
+        }
+    }
+
     private final HttpHandler delegate;
     private final CircuitBreakerRegistry registry;
     private final RequestRouter router;
-    private final Set<String> excludedPaths;
+    private final String[] excludedPaths;
+    /** One lookup per thread: a lookup is not thread-safe, and this class reads it before anything else matches. */
+    private final ThreadLocal<RouteLookup> lookups;
 
     /**
      * Creates the guard.
@@ -58,33 +75,40 @@ public final class CircuitBreakerIngress implements HttpHandler {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.router = Objects.requireNonNull(router, "router");
-        this.excludedPaths = Set.copyOf(excludedPaths);
+        this.excludedPaths = Set.copyOf(excludedPaths).toArray(String[]::new);
+        this.lookups = ThreadLocal.withInitial(router::newLookup);
+    }
+
+    private static CallOutcome outcome(int statusCode) {
+        int index = statusCode - FIRST_STATUS;
+        return index >= 0 && index < RESPONSE_OUTCOMES.length
+                ? RESPONSE_OUTCOMES[index]
+                : CallOutcome.response(statusCode);
     }
 
     @Override
     public void handle(HttpExchange exchange) {
         HttpRequest request = exchange.request();
         String path = request.path();
-        int query = path.indexOf('?');
-        if (excludedPaths.contains(query < 0 ? path : path.substring(0, query))) {
+        if (isExcluded(path)) {
             delegate.handle(exchange);
             return;
         }
-        RouteMatch match = router.match(request.method() != null ? request.method().name() : null, path);
-        if (!match.isMatched()) {
+        RouteLookup lookup = lookups.get();
+        if (!router.match(request.method() != null ? request.method().name() : null, path, lookup)) {
             delegate.handle(exchange);
             return;
         }
 
         CircuitBreaker breaker;
         try {
-            breaker = registry.getOrCreate(match.route().id());
+            breaker = registry.getOrCreate(lookup.route().id());
         } catch (CircuitBreakerLimitExceededException e) {
             delegate.handle(exchange);
             return;
         }
-        Permit permit = breaker.acquirePermission();
-        if (!permit.permitted()) {
+        long permit = breaker.acquirePermission();
+        if (!Permits.permitted(permit)) {
             refuse(exchange, breaker);
             return;
         }
@@ -92,9 +116,20 @@ public final class CircuitBreakerIngress implements HttpHandler {
         try {
             delegate.handle(guarded);
         } catch (RuntimeException | Error e) {
-            guarded.report(CallOutcome.transportError());
+            guarded.report(TRANSPORT_ERROR);
             throw e;
         }
+    }
+
+    /** Compared in place: the path is not cut at its query, so nothing is allocated. */
+    private boolean isExcluded(String path) {
+        for (String excluded : excludedPaths) {
+            if (path.startsWith(excluded)
+                    && (path.length() == excluded.length() || path.charAt(excluded.length()) == '?')) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void refuse(HttpExchange exchange, CircuitBreaker breaker) {
@@ -110,13 +145,16 @@ public final class CircuitBreakerIngress implements HttpHandler {
     }
 
     private static final class GuardedExchange implements HttpExchange {
+        private static final AtomicIntegerFieldUpdater<GuardedExchange> REPORTED =
+                AtomicIntegerFieldUpdater.newUpdater(GuardedExchange.class, "reported");
+
         private final HttpExchange delegateExchange;
         private final CircuitBreaker breaker;
-        private final Permit permit;
+        private final long permit;
         private final long startNanos;
-        private final AtomicBoolean reported = new AtomicBoolean();
+        private volatile int reported;
 
-        GuardedExchange(HttpExchange delegateExchange, CircuitBreaker breaker, Permit permit, long startNanos) {
+        GuardedExchange(HttpExchange delegateExchange, CircuitBreaker breaker, long permit, long startNanos) {
             this.delegateExchange = delegateExchange;
             this.breaker = breaker;
             this.permit = permit;
@@ -135,18 +173,18 @@ public final class CircuitBreakerIngress implements HttpHandler {
 
         @Override
         public void respond(HttpResponse response) {
-            report(CallOutcome.response(response.status().code()));
+            report(outcome(response.status().code()));
             delegateExchange.respond(response);
         }
 
         @Override
         public void respond(HttpTypedResponse response) {
-            report(CallOutcome.response(response.status().code()));
+            report(outcome(response.status().code()));
             delegateExchange.respond(response);
         }
 
         void report(CallOutcome outcome) {
-            if (reported.compareAndSet(false, true)) {
+            if (REPORTED.compareAndSet(this, 0, 1)) {
                 breaker.onOutcome(permit, outcome, System.nanoTime() - startNanos);
             }
         }

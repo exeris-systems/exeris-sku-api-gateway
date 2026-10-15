@@ -2,26 +2,23 @@ package eu.exeris.sku.gateway.routing;
 
 import eu.exeris.caps.gatewaycore.api.GatewayPolicy;
 import eu.exeris.caps.gatewaycore.api.PolicyResult;
-import eu.exeris.caps.routing.api.HeaderEntry;
 import eu.exeris.caps.routing.api.RequestRouter;
-import eu.exeris.caps.routing.api.RouteMatch;
+import eu.exeris.caps.routing.api.RouteLookup;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
 /**
  * Adapter integrating {@link RequestRouter} into the Exeris Gateway {@link eu.exeris.caps.gatewaycore.api.PolicyChain}.
  *
- * <p>Operates during {@code preRouting} at order {@code -10} (after CORS -100, Rate Limiting -75, and JWT -40).
- * Validates route existence via the compiled Radix Tree and provides fast 404 rejection on unknown routes.
- * In {@code postRouting}, applies response header transformations specified on the matched route.
- *
+ * <p>Operates during {@code preRouting} at order {@code -10}, after request size, CORS, rate limiting, the WAF
+ * and JWT admission. It answers {@code 404} for a path no route matches, so an unknown route never reaches
+ * the proxy. It reads the match from a {@link RouteLookup} that each thread keeps and reuses, and keeps
+ * nothing of it: the proxy matches again to forward.
  */
 public final class RoutingGatewayPolicy implements GatewayPolicy {
 
@@ -29,7 +26,9 @@ public final class RoutingGatewayPolicy implements GatewayPolicy {
     private static final int POLICY_ORDER = -10;
 
     private final RequestRouter router;
-    private final Set<String> excludedExactPaths;
+    private final String[] excludedExactPaths;
+    /** One lookup per thread: a lookup is not thread-safe, and this class reads it before anything else matches. */
+    private final ThreadLocal<RouteLookup> lookups;
 
     public RoutingGatewayPolicy(RequestRouter router) {
         this(router, Set.of("/actuator/health", "/health"));
@@ -37,7 +36,8 @@ public final class RoutingGatewayPolicy implements GatewayPolicy {
 
     public RoutingGatewayPolicy(RequestRouter router, Set<String> excludedExactPaths) {
         this.router = Objects.requireNonNull(router, "router");
-        this.excludedExactPaths = excludedExactPaths != null ? excludedExactPaths : Set.of();
+        this.excludedExactPaths = excludedExactPaths != null ? excludedExactPaths.toArray(String[]::new) : new String[0];
+        this.lookups = ThreadLocal.withInitial(router::newLookup);
     }
 
     @Override
@@ -58,9 +58,7 @@ public final class RoutingGatewayPolicy implements GatewayPolicy {
         }
 
         String method = exchange.request().method() != null ? exchange.request().method().name() : null;
-        RouteMatch match = router.match(method, path);
-
-        if (!match.isMatched()) {
+        if (!router.match(method, path, lookups.get())) {
             return PolicyResult.shortCircuit(HttpStatus.NOT_FOUND);
         }
 
@@ -76,8 +74,13 @@ public final class RoutingGatewayPolicy implements GatewayPolicy {
         if (path == null) {
             return false;
         }
-        int queryIdx = path.indexOf('?');
-        String base = queryIdx < 0 ? path : path.substring(0, queryIdx);
-        return excludedExactPaths.contains(base);
+        // Compared in place: the path is not cut at its query, so nothing is allocated
+        for (String excluded : excludedExactPaths) {
+            if (path.startsWith(excluded)
+                    && (path.length() == excluded.length() || path.charAt(excluded.length()) == '?')) {
+                return true;
+            }
+        }
+        return false;
     }
 }

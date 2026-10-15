@@ -21,12 +21,12 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * High-performance, zero-allocation Gateway Policy integrating {@link WafPolicy}
- * into the Exeris Gateway {@link eu.exeris.caps.gatewaycore.api.PolicyChain}.
+ * Refuses a request the {@link WafPolicy} blocks with {@code 403 Forbidden}, before JWT admission runs.
+ * It sits in the Exeris Gateway {@link eu.exeris.caps.gatewaycore.api.PolicyChain}.
  *
- * <p>Executes during {@code preRouting} at order {@code -45} (after Rate Limiting and before JWT Validation).
- * Drops malicious attacks (SQLi, XSS, Path Traversal, RCE, Protocol Violations) at wire-speed with
- * {@code 403 Forbidden} before consuming expensive JWT signature verification CPU.
+ * <p>Executes during {@code preRouting} at order {@code -45}, after rate limiting and before JWT admission,
+ * so a request the WAF blocks costs no signature verification. A request that is not excluded is copied into
+ * a {@link WafRequest} for the policy, which allocates; this class makes no allocation claim.
  *
  * <p>A decision that detects without blocking (a policy in {@code DETECT} mode) lets the request through
  * and is logged with its category and rule id; the matched text is not logged because the client wrote it.
