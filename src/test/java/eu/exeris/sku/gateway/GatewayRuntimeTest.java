@@ -152,6 +152,17 @@ class GatewayRuntimeTest {
     }
 
     @Test
+    @DisplayName("With JWT on, the health path is open with a query string and /healthz is not")
+    void jwtLeavesHealthOpenWithQuery() throws Exception {
+        start("EXERIS_GATEWAY_ROUTES", "/=http://backend:8080", "EXERIS_JWT_ENABLED", "true", "EXERIS_JWT_SECRET", SECRET);
+
+        assertThat(send("/health").status()).isEqualTo(200);
+        assertThat(send("/health?x=1").status()).isEqualTo(200);
+        assertThat(send("/healthz").status()).isEqualTo(401);
+        assertThat(send("/healthz?x=1").status()).isEqualTo(401);
+    }
+
+    @Test
     @DisplayName("With JWT on, a request without a valid token is refused and a valid one is forwarded")
     void jwtAdmission() throws Exception {
         start("EXERIS_JWT_ENABLED", "true", "EXERIS_JWT_SECRET", SECRET);
