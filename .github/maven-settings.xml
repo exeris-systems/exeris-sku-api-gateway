@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Used by CI (`mvn -s .github/maven-settings.xml`) to resolve exeris-kernel from GitHub Packages.
+     The token comes from the environment and is never written here. Locally, export
+     PACKAGES_READ_TOKEN (a classic PAT with read:packages) and pass the same -s flag, or install
+     exeris-kernel from source instead. -->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <servers>
+    <server>
+      <id>github-exeris-kernel</id>
+      <username>exeris-systems</username>
+      <password>${env.PACKAGES_READ_TOKEN}</password>
+    </server>
+  </servers>
+  <profiles>
+    <profile>
+      <id>github-exeris-kernel</id>
+      <repositories>
+        <repository>
+          <id>github-exeris-kernel</id>
+          <url>https://maven.pkg.github.com/exeris-systems/exeris-kernel</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>true</enabled>
+          </snapshots>
+        </repository>
+      </repositories>
+    </profile>
+  </profiles>
+  <activeProfiles>
+    <activeProfile>github-exeris-kernel</activeProfile>
+  </activeProfiles>
+</settings>

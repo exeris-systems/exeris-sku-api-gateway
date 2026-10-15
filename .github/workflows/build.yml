@@ -1,0 +1,176 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  build:
+    name: mvn verify (JDK ${{ matrix.java }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 25 is the baseline the jar is compiled for (`maven.compiler.release` 25); 26 checks that the
+        # sources still compile on the next JDK. Both rows produce class-file major 69.
+        java: ['25', '26']
+
+    env:
+      # exeris-kernel is resolved from GitHub Packages, which asks for a token even for a public
+      # package, and a repository's own GITHUB_TOKEN cannot read packages published by another
+      # repository. PACKAGES_READ_TOKEN is a classic PAT with read:packages, set as a repository or
+      # organisation secret. .github/maven-settings.xml is the only place it is used.
+      PACKAGES_READ_TOKEN: ${{ secrets.PACKAGES_READ_TOKEN }}
+
+    steps:
+      - name: Checkout exeris-sku-api-gateway
+        uses: actions/checkout@v7
+        with:
+          path: exeris-sku-api-gateway
+
+      # The SDK and the codegen chain are not published to a Maven repository, so both are built
+      # from source at the release tag matching the version in pom.xml. An immutable ref keeps an
+      # unrelated upstream commit from turning this build red.
+      - name: Checkout exeris-sdk (v0.12.0 — matches exeris.sdk.version in the POM)
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-sdk
+          ref: v0.12.0
+          path: exeris-sdk
+
+      - name: Checkout exeris-tooling (v0.10.0 — matches exeris.tooling.version in the POM)
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-tooling
+          ref: v0.10.0
+          path: exeris-tooling
+
+      # The composed capabilities are at 0.1.0-SNAPSHOT and published nowhere, so each is built from its
+      # default branch; a change there can turn this build red. exeris-caps-service-boundary-core is a
+      # test-scope dependency of gateway-core's build.
+      - name: Checkout exeris-caps-service-boundary-core
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-caps-service-boundary-core
+          ref: main
+          path: exeris-caps-service-boundary-core
+      - name: Checkout exeris-caps-gateway-core
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-caps-gateway-core
+          ref: main
+          path: exeris-caps-gateway-core
+      - name: Checkout exeris-caps-request-routing
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-caps-request-routing
+          ref: main
+          path: exeris-caps-request-routing
+      - name: Checkout exeris-caps-upstream-pool
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-caps-upstream-pool
+          ref: main
+          path: exeris-caps-upstream-pool
+      - name: Checkout exeris-caps-circuit-breaker
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-caps-circuit-breaker
+          ref: main
+          path: exeris-caps-circuit-breaker
+      - name: Checkout exeris-caps-waf-rules
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-caps-waf-rules
+          ref: main
+          path: exeris-caps-waf-rules
+      - name: Checkout exeris-caps-gateway-observability
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-caps-gateway-observability
+          ref: main
+          path: exeris-caps-gateway-observability
+      - name: Checkout exeris-caps-cors-policy
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-caps-cors-policy
+          ref: main
+          path: exeris-caps-cors-policy
+      - name: Checkout exeris-caps-rate-limiting
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-caps-rate-limiting
+          ref: main
+          path: exeris-caps-rate-limiting
+      - name: Checkout exeris-caps-jwt-validation
+        uses: actions/checkout@v7
+        with:
+          repository: exeris-systems/exeris-caps-jwt-validation
+          ref: main
+          path: exeris-caps-jwt-validation
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+          cache: maven
+
+      - name: Check that the package-read token is set
+        run: |
+          if [ -z "${PACKAGES_READ_TOKEN}" ]; then
+            echo "::error::PACKAGES_READ_TOKEN is not set, so exeris-kernel cannot be resolved from GitHub Packages"
+            exit 1
+          fi
+
+      # japicmp.skip: the SDK binds a semver gate to verify whose baseline is the previous release
+      # jar, which a runner cannot resolve. That gate belongs to the SDK's own CI.
+      - name: Install exeris-sdk to the local repository
+        working-directory: exeris-sdk
+        run: mvn -B -ntp -DskipTests -Djapicmp.skip=true install
+
+      # An allowlist, not the whole reactor: exeris-e2e-tests declares the kernel at test scope, and
+      # -am does not follow BOM imports, so exeris-tooling-bom is named explicitly. The plugin brings
+      # exeris-codegen-core, which the composition-manifest test reads.
+      - name: Install the codegen chain to the local repository
+        working-directory: exeris-tooling
+        run: mvn -B -ntp -DskipTests install -pl exeris-tooling-bom,exeris-processor,exeris-codegen-maven-plugin -am
+
+      # Two passes per capability, and the first is not redundant: exeris:generate runs at
+      # generate-sources, but the processor writes the capability metadata it reads only during compile.
+      # The order puts a capability after what its build needs.
+      - name: Install the composed capabilities to the local repository (two passes each)
+        run: |
+          for cap in service-boundary-core gateway-core request-routing upstream-pool circuit-breaker waf-rules gateway-observability cors-policy rate-limiting jwt-validation;
+          do
+            (cd "exeris-caps-$cap" \
+              && mvn -B -ntp -s "$GITHUB_WORKSPACE/exeris-sku-api-gateway/.github/maven-settings.xml" compile -Dexeris.codegen.skip=true \
+              && mvn -B -ntp -s "$GITHUB_WORKSPACE/exeris-sku-api-gateway/.github/maven-settings.xml" -DskipTests install) || exit 1
+          done
+
+      - name: mvn verify
+        working-directory: exeris-sku-api-gateway
+        run: mvn -B -ntp -s .github/maven-settings.xml verify
+
+      # composition.json is generated by CompositionManifestTest's regeneration switch and compared by
+      # the test, so a drift already fails verify; this step also catches a file the build added.
+      - name: Assert the build left the tree as committed
+        working-directory: exeris-sku-api-gateway
+        run: |
+          DRIFT=$(git status --porcelain --untracked-files=all -- composition.json)
+          if [ -n "$DRIFT" ]; then
+            echo "$DRIFT"
+            echo "::error::composition.json does not match the composed capabilities; regenerate it with -Dexeris.composition.regenerate=true and commit the result"
+            exit 1
+          fi
+
+      - name: Build the container image
+        if: matrix.java == '25'
+        working-directory: exeris-sku-api-gateway
+        run: docker build -t exeris-sku-api-gateway:ci .

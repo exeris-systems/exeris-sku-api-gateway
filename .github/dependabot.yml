@@ -1,0 +1,49 @@
+version: 2
+
+# GitHub Actions and Maven, weekly. The eu.exeris pins are ignored: CI builds the SDK and the codegen
+# chain from the release tag that build.yml names, and sibling caps from their default branch, so a
+# bot PR moving one of those versions would propose something the build does not produce. They move
+# by a deliberate change to the POM and build.yml together.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci(actions)"
+    labels:
+      - dependencies
+    groups:
+      # Routine minors and patches of GitHub's own actions travel together; a major arrives on its own.
+      github-owned:
+        patterns:
+          - "actions/*"
+          - "github/*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    labels:
+      - dependencies
+    ignore:
+      - dependency-name: "eu.exeris:*"
+      - dependency-name: "eu.exeris.tooling:*"
+      - dependency-name: "eu.exeris.caps:*"
+    groups:
+      test-dependencies:
+        patterns:
+          - "org.junit.jupiter:*"
+          - "org.assertj:*"
+        update-types:
+          - minor
+          - patch
