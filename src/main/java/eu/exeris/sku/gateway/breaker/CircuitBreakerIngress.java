@@ -1,5 +1,6 @@
 package eu.exeris.sku.gateway.breaker;
 
+import eu.exeris.sku.gateway.paths.PathMatch;
 import eu.exeris.caps.breaker.api.CallOutcome;
 import eu.exeris.caps.breaker.api.CircuitBreaker;
 import eu.exeris.caps.breaker.api.CircuitBreakerLimitExceededException;
@@ -76,7 +77,7 @@ public final class CircuitBreakerIngress implements HttpHandler {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.router = Objects.requireNonNull(router, "router");
-        this.excludedPaths = Set.copyOf(excludedPaths).toArray(String[]::new);
+        this.excludedPaths = PathMatch.toArray(Set.copyOf(excludedPaths));
         this.lookups = new RouteLookupPool(router);
     }
 
@@ -130,15 +131,8 @@ public final class CircuitBreakerIngress implements HttpHandler {
         }
     }
 
-    /** Compared in place: the path is not cut at its query, so nothing is allocated. */
     private boolean isExcluded(String path) {
-        for (String excluded : excludedPaths) {
-            if (path.startsWith(excluded)
-                    && (path.length() == excluded.length() || path.charAt(excluded.length()) == '?')) {
-                return true;
-            }
-        }
-        return false;
+        return PathMatch.matchesAny(path, excludedPaths);
     }
 
     private static void refuse(HttpExchange exchange, CircuitBreaker breaker) {

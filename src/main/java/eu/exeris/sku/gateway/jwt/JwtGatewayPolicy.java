@@ -1,5 +1,6 @@
 package eu.exeris.sku.gateway.jwt;
 
+import eu.exeris.sku.gateway.paths.PathMatch;
 import eu.exeris.caps.gatewaycore.api.GatewayPolicy;
 import eu.exeris.caps.gatewaycore.api.PolicyResult;
 import eu.exeris.caps.jwt.api.JwtAdmissionPolicy;
@@ -28,7 +29,7 @@ public final class JwtGatewayPolicy implements GatewayPolicy {
     private static final int POLICY_ORDER = -40;
 
     private final JwtAdmissionPolicy jwtAdmissionPolicy;
-    private final Set<String> excludedExactPaths;
+    private final String[] excludedExactPaths;
     private final List<String> excludedPrefixes;
 
     public JwtGatewayPolicy(JwtAdmissionPolicy jwtAdmissionPolicy) {
@@ -41,7 +42,7 @@ public final class JwtGatewayPolicy implements GatewayPolicy {
             List<String> excludedPrefixes
     ) {
         this.jwtAdmissionPolicy = Objects.requireNonNull(jwtAdmissionPolicy, "jwtAdmissionPolicy");
-        this.excludedExactPaths = excludedExactPaths != null ? excludedExactPaths : Set.of();
+        this.excludedExactPaths = PathMatch.toArray(excludedExactPaths);
         this.excludedPrefixes = excludedPrefixes != null ? excludedPrefixes : List.of();
     }
 
@@ -89,7 +90,7 @@ public final class JwtGatewayPolicy implements GatewayPolicy {
         if (path == null) {
             return false;
         }
-        if (excludedExactPaths.contains(path)) {
+        if (PathMatch.matchesAny(path, excludedExactPaths)) {
             return true;
         }
         for (String prefix : excludedPrefixes) {

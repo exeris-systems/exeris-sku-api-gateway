@@ -1,5 +1,6 @@
 package eu.exeris.sku.gateway.routing;
 
+import eu.exeris.sku.gateway.paths.PathMatch;
 import eu.exeris.caps.gatewaycore.api.GatewayPolicy;
 import eu.exeris.caps.gatewaycore.api.PolicyResult;
 import eu.exeris.caps.routing.api.RequestRouter;
@@ -36,7 +37,7 @@ public final class RoutingGatewayPolicy implements GatewayPolicy {
 
     public RoutingGatewayPolicy(RequestRouter router, Set<String> excludedExactPaths) {
         this.router = Objects.requireNonNull(router, "router");
-        this.excludedExactPaths = excludedExactPaths != null ? excludedExactPaths.toArray(String[]::new) : new String[0];
+        this.excludedExactPaths = PathMatch.toArray(excludedExactPaths);
         this.lookups = new RouteLookupPool(router);
     }
 
@@ -81,13 +82,6 @@ public final class RoutingGatewayPolicy implements GatewayPolicy {
         if (path == null) {
             return false;
         }
-        // Compared in place: the path is not cut at its query, so nothing is allocated
-        for (String excluded : excludedExactPaths) {
-            if (path.startsWith(excluded)
-                    && (path.length() == excluded.length() || path.charAt(excluded.length()) == '?')) {
-                return true;
-            }
-        }
-        return false;
+        return PathMatch.matchesAny(path, excludedExactPaths);
     }
 }

@@ -1,5 +1,6 @@
 package eu.exeris.sku.gateway.waf;
 
+import eu.exeris.sku.gateway.paths.PathMatch;
 import eu.exeris.caps.gatewaycore.api.GatewayPolicy;
 import eu.exeris.caps.gatewaycore.api.PolicyResult;
 import eu.exeris.caps.waf.api.WafDecision;
@@ -40,7 +41,7 @@ public final class WafGatewayPolicy implements GatewayPolicy {
     public static final int DEFAULT_ORDER = -45;
 
     private final WafPolicy wafPolicy;
-    private final Set<String> excludedPaths;
+    private final String[] excludedPaths;
     private final int order;
 
     public WafGatewayPolicy(WafPolicy wafPolicy) {
@@ -49,7 +50,7 @@ public final class WafGatewayPolicy implements GatewayPolicy {
 
     public WafGatewayPolicy(WafPolicy wafPolicy, Set<String> excludedPaths, int order) {
         this.wafPolicy = Objects.requireNonNull(wafPolicy, "wafPolicy");
-        this.excludedPaths = Objects.requireNonNull(excludedPaths, "excludedPaths");
+        this.excludedPaths = PathMatch.toArray(Objects.requireNonNull(excludedPaths, "excludedPaths"));
         this.order = order;
     }
 
@@ -67,7 +68,7 @@ public final class WafGatewayPolicy implements GatewayPolicy {
     public PolicyResult preRouting(HttpExchange exchange) {
         HttpRequest req = exchange.request();
         String rawUri = req.path();
-        if (rawUri == null || excludedPaths.contains(rawUri)) {
+        if (rawUri == null || PathMatch.matchesAny(rawUri, excludedPaths)) {
             return PolicyResult.proceed();
         }
 
@@ -75,10 +76,6 @@ public final class WafGatewayPolicy implements GatewayPolicy {
         int qIdx = rawUri.indexOf('?');
         String path = (qIdx >= 0) ? rawUri.substring(0, qIdx) : rawUri;
         String query = (qIdx >= 0 && qIdx + 1 < rawUri.length()) ? rawUri.substring(qIdx + 1) : "";
-
-        if (excludedPaths.contains(path)) {
-            return PolicyResult.proceed();
-        }
 
         // Convert headers efficiently
         List<HttpHeader> reqHeaders = req.headers();

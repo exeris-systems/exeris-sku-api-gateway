@@ -1,5 +1,6 @@
 package eu.exeris.sku.gateway.observability;
 
+import eu.exeris.sku.gateway.paths.PathMatch;
 import eu.exeris.caps.observability.api.GatewayObservabilityService;
 import eu.exeris.caps.observability.api.TraceContext;
 import eu.exeris.kernel.spi.http.HttpExchange;
@@ -30,7 +31,7 @@ public final class ObservabilityIngress implements HttpHandler {
 
     private final HttpHandler delegate;
     private final GatewayObservabilityService observability;
-    private final Set<String> excludedPaths;
+    private final String[] excludedPaths;
 
     /**
      * Creates the wrapper.
@@ -43,13 +44,13 @@ public final class ObservabilityIngress implements HttpHandler {
                                 Set<String> excludedPaths) {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
         this.observability = Objects.requireNonNull(observability, "observability");
-        this.excludedPaths = Set.copyOf(Objects.requireNonNull(excludedPaths, "excludedPaths"));
+        this.excludedPaths = PathMatch.toArray(Set.copyOf(Objects.requireNonNull(excludedPaths, "excludedPaths")));
     }
 
     @Override
     public void handle(HttpExchange exchange) {
         HttpRequest request = exchange.request();
-        if (excludedPaths.contains(pathOnly(request.path()))) {
+        if (PathMatch.matchesAny(request.path(), excludedPaths)) {
             delegate.handle(exchange);
             return;
         }
@@ -66,14 +67,6 @@ public final class ObservabilityIngress implements HttpHandler {
             observed.finish(500);
             throw e;
         }
-    }
-
-    private static String pathOnly(String path) {
-        if (path == null) {
-            return "";
-        }
-        int query = path.indexOf('?');
-        return query < 0 ? path : path.substring(0, query);
     }
 
     private final class ObservedExchange implements HttpExchange {
