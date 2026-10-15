@@ -1,0 +1,15 @@
+# Agent material for this repository (exeris-docs standards/agents-md-schema.md).
+#
+# This repository consumes the organisation bundle and authors nothing of its own, so the keys that
+# name profiles, skills, workflows, policies, references, hooks and adapters are absent rather than
+# empty: the checker asserts the manifest and the filesystem agree in both directions.
+version: 2
+repository: exeris-sku-api-gateway
+
+# Pinned and vendored under .agents/vendor/ (rule 8). `ref` is the bundle commit the tree was taken
+# from and `sha256` a digest over every byte of it; a bump re-vendors, it never edits in place.
+imports:
+  - bundle: exeris-agents
+    version: 2.1.0
+    ref: abfdbe5336e3c29b807241b0bb00a6091cb42fea
+    sha256: sha256:7454a4e4f8682b664899225551dbf4e827e40a2c8889c989ff24e9ebdf2f960f
