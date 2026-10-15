@@ -3,7 +3,7 @@
   "stamp" : {
     "validated" : true,
     "compositionVersion" : "0.1.0",
-    "contentBinding" : "sha256:69d7252b351afd0f540b903b700e76283b397a4d7e65d576c17bb78c7b968410"
+    "contentBinding" : "sha256:1a0ea4c5bf9360267fb434d0675fa9449254e5e6dcdc556bcc18c636c9cf5f73"
   },
   "modules" : [
     {
@@ -32,7 +32,7 @@
         "provides" : [
           {
             "service" : "eu.exeris.caps.corspolicy.api.CorsPolicy",
-            "version" : "1.0.0"
+            "version" : "0.1.0"
           }
         ],
         "requires" : [ ]
@@ -111,10 +111,17 @@
         "provides" : [
           {
             "service" : "eu.exeris.caps.ratelimit.api.RateLimitPolicy",
-            "version" : "1.0.0"
+            "version" : "0.1.0"
           }
         ],
-        "requires" : [ ]
+        "requires" : [
+          {
+            "service" : "eu.exeris.caps.serviceboundarycore.api.RequestFilterChain",
+            "versionRange" : "[0.1.0,0.2.0)",
+            "optional" : true
+          }
+        ],
+        "lifecycleOwner" : "eu.exeris.caps.ratelimit.RateLimitModule"
       }
     },
     {
@@ -146,7 +153,16 @@
       }
     }
   ],
-  "resolutions" : [ ],
+  "resolutions" : [
+    {
+      "module" : "eu.exeris.caps.ratelimit.RateLimitModule",
+      "service" : "eu.exeris.caps.serviceboundarycore.api.RequestFilterChain",
+      "versionRange" : "[0.1.0,0.2.0)",
+      "optional" : true,
+      "satisfied" : false,
+      "providers" : [ ]
+    }
+  ],
   "initOrder" : [
     "eu.exeris.caps.breaker.CircuitBreakerModule",
     "eu.exeris.caps.corspolicy.CorsPolicyModule",
@@ -158,5 +174,7 @@
     "eu.exeris.caps.routing.RequestRoutingModule",
     "eu.exeris.caps.waf.WafModule"
   ],
-  "warnings" : [ ]
+  "warnings" : [
+    "module eu.exeris.caps.ratelimit.RateLimitModule @Requires service eu.exeris.caps.serviceboundarycore.api.RequestFilterChain version [0.1.0,0.2.0) but no @CapabilityModule provides it (optional — skipped)"
+  ]
 }

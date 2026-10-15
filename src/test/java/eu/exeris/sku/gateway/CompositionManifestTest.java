@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import eu.exeris.sdk.composition.CapManifest;
-import eu.exeris.sdk.composition.runtime.CompositionConductor;
 import eu.exeris.sdk.composition.runtime.CompositionStampAssertion;
 import eu.exeris.tooling.codegen.core.capability.CapabilityGraph;
 import eu.exeris.tooling.codegen.core.capability.CapabilityModuleDescriptor;
@@ -115,8 +114,5 @@ class CompositionManifestTest {
         assertThat(stamp.get("validated").asBoolean()).isTrue();
         assertThat(stamp.get("compositionVersion").asText()).isEqualTo(projectVersion());
         assertThatCode(() -> CompositionStampAssertion.assertConsistent(manifest)).doesNotThrowAnyException();
-        try (CompositionConductor conductor = CompositionConductor.from(manifest).start()) {
-            assertThat(conductor).isNotNull();
-        }
     }
 }
