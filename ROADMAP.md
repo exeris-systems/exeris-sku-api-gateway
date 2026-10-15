@@ -27,7 +27,7 @@ the kernel HTTP subsystem, instantiates `GatewayCoreModule`, registers six polic
 `JwtGatewayPolicy`, `RoutingGatewayPolicy`), wraps the ingress with `CircuitBreakerIngress` and
 `ObservabilityIngress`, and forwards through a reverse proxy on the kernel client engine. It composes nine caps: `gateway-core`, `cors-policy`,
 `rate-limiting`, `jwt-validation`, `request-routing`, `upstream-pool`, `circuit-breaker`,
-`gateway-observability` and `waf-rules`. 103 tests across 19 classes: one integration test per concern, the assembled gateway, configuration,
+`gateway-observability` and `waf-rules`. The tests are one integration test per concern, the assembled gateway, configuration,
 licence enforcement, a smoke test and the real application in its own JVM (`GatewayProcessIT`).
 
 The import is the state this roadmap starts from. It already: carries no application-specific routes
