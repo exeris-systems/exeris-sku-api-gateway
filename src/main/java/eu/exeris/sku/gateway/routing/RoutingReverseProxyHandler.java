@@ -5,7 +5,8 @@ import eu.exeris.caps.pool.api.UpstreamHost;
 import eu.exeris.caps.pool.api.UpstreamPoolService;
 import eu.exeris.caps.routing.api.HeaderEntry;
 import eu.exeris.caps.routing.api.RequestRouter;
-import eu.exeris.caps.routing.api.RouteMatch;
+import eu.exeris.caps.routing.api.Route;
+import eu.exeris.caps.routing.api.RouteLookup;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
@@ -30,11 +31,12 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Zero-copy L7 reverse-proxy handler.
+ * L7 reverse-proxy handler.
  *
  * <p>Uses {@link RequestRouter} (radix tree) to resolve the destination upstream, rewrites the path and
  * applies the route's header mutations. The destination always comes from the route table, never from the
- * request.
+ * request. The route is matched into a {@link RouteLookup} that each thread keeps and reuses; the lookup is
+ * read only within one call of {@link #handle(HttpExchange)} and is never handed on.
  *
  * <p>Headers that describe the client connection or the client's own origin are not forwarded: hop-by-hop
  * headers, any header the {@code Connection} header names, and {@code Forwarded}, {@code X-Forwarded-*} and
@@ -42,7 +44,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * gateway's value or none.
  *
  * <p>A request that fails over to another host in a cluster is a safe method without a body: a request with
- * a body is not replayed, and a method with side effects is never sent twice.
+ * a body is not replayed, and a method with side effects is never sent twice. Failover follows a {@code 5xx}
+ * answer and a transport failure alike, and both are reported to the cluster, which is what ejects a host
+ * that keeps failing.
+ *
+ * <p>With the {@code IP_HASH} algorithm a cluster selects by a key the caller supplies. The kernel's
+ * {@link HttpExchange} does not expose the connection's peer address yet, and a header is not a substitute
+ * because the client writes every header it sends, so selection is keyless and {@code IP_HASH} rotates over
+ * the available hosts like {@code ROUND_ROBIN} until the kernel exposes the address.
  */
 public final class RoutingReverseProxyHandler implements HttpHandler {
 
@@ -58,6 +67,8 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
     private final boolean failoverEnabled;
     private final boolean claimsVerified;
     private final ConcurrentHashMap<String, TargetInfo> targetCache = new ConcurrentHashMap<>();
+    /** One lookup per thread: a lookup is not thread-safe, and {@link #handle} matches once and finishes with it. */
+    private final ThreadLocal<RouteLookup> lookups;
 
     public RoutingReverseProxyHandler(RequestRouter router) {
         this(router, null, null, false, false);
@@ -86,6 +97,7 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
         this.poolService = poolService;
         this.failoverEnabled = failoverEnabled;
         this.claimsVerified = claimsVerified;
+        this.lookups = ThreadLocal.withInitial(router::newLookup);
     }
 
     private HttpClientEngine engine() {
@@ -123,14 +135,15 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
             String method = clientReq.method() != null ? clientReq.method().name() : null;
             String originalPath = clientReq.path();
 
-            RouteMatch match = router.match(method, originalPath);
-            if (!match.isMatched()) {
+            RouteLookup lookup = lookups.get();
+            if (!router.match(method, originalPath, lookup)) {
                 exchange.respond(HttpStatus.NOT_FOUND);
                 return;
             }
-            routeId = match.route().id();
+            Route route = lookup.route();
+            routeId = route.id();
 
-            String targetUri = match.route().targetUri();
+            String targetUri = route.targetUri();
             UpstreamCluster cluster = null;
             UpstreamHost host = null;
 
@@ -151,7 +164,9 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
 
             try {
                 TargetInfo target = resolveTarget(targetUri);
-                String forwardedPath = match.rewrittenPath();
+                // Built once: the failover below reuses it, and the lookup is not read for it again
+                String rewrittenPath = lookup.rewrittenPath();
+                String forwardedPath = rewrittenPath;
                 if (!target.basePath.isEmpty()) {
                     forwardedPath = target.basePath + (forwardedPath.startsWith("/") ? forwardedPath : "/" + forwardedPath);
                 }
@@ -168,7 +183,7 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
                     }
                 }
 
-                List<HeaderEntry> transformedEntries = match.transformRequestHeaders(entries, contextClaims);
+                List<HeaderEntry> transformedEntries = lookup.transformRequestHeaders(entries, contextClaims);
 
                 Set<String> hopByHop = ForwardingHeaders.hopByHopRequest(clientHeaders);
                 List<HttpHeader> outboundHeaders = new ArrayList<>(transformedEntries.size());
@@ -190,12 +205,24 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
                         requestBody
                 );
 
-                upstreamResp = engine().send(outboundReq);
+                RuntimeException sendFailure = null;
+                try {
+                    upstreamResp = engine().send(outboundReq);
+                } catch (RuntimeException e) {
+                    if (cluster == null) {
+                        throw e;
+                    }
+                    // A host that cannot be reached is ejected only if the pool is told
+                    cluster.recordResult(host, 0, true);
+                    sendFailure = e;
+                }
 
                 if (cluster != null) {
-                    cluster.recordResult(host, upstreamResp.status().code(), false);
+                    if (upstreamResp != null) {
+                        cluster.recordResult(host, upstreamResp.status().code(), false);
+                    }
                     boolean replayable = requestBody == null && method != null && SAFE_METHODS.contains(method);
-                    if (failoverEnabled && replayable && upstreamResp.status().code() >= 500
+                    if (failoverEnabled && replayable && (upstreamResp == null || upstreamResp.status().code() >= 500)
                             && cluster.healthyHostCount() > 0) {
                         UpstreamHost backupHost = cluster.selectHost();
                         if (backupHost != null && backupHost != host) {
@@ -203,7 +230,7 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
                             host = backupHost;
                             host.incrementConnections();
                             TargetInfo backupTarget = resolveTarget(host.endpoint().baseUri());
-                            String backupPath = match.rewrittenPath();
+                            String backupPath = rewrittenPath;
                             if (!backupTarget.basePath.isEmpty()) {
                                 backupPath = backupTarget.basePath
                                         + (backupPath.startsWith("/") ? backupPath : "/" + backupPath);
@@ -219,16 +246,19 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
                             try {
                                 HttpResponse retryResp = engine().send(retryReq);
                                 cluster.recordResult(host, retryResp.status().code(), false);
-                                if (retryResp.status().code() < 500) {
+                                if (upstreamResp == null || retryResp.status().code() < 500) {
                                     closeQuietly(upstreamResp);
                                     upstreamResp = retryResp;
                                 } else {
                                     closeQuietly(retryResp);
                                 }
-                            } catch (Exception retryEx) {
+                            } catch (RuntimeException retryEx) {
                                 cluster.recordResult(host, 0, true);
                             }
                         }
+                    }
+                    if (upstreamResp == null) {
+                        throw sendFailure;
                     }
                 }
 
@@ -239,7 +269,7 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
                     respEntries.add(new HeaderEntry(h.name(), h.value()));
                 }
 
-                List<HeaderEntry> transformedRespEntries = match.transformResponseHeaders(respEntries);
+                List<HeaderEntry> transformedRespEntries = lookup.transformResponseHeaders(respEntries);
 
                 Set<String> responseDropped = ForwardingHeaders.droppedFromResponse(upHeaders);
                 List<HttpHeader> responseHeaders = new ArrayList<>(transformedRespEntries.size());
