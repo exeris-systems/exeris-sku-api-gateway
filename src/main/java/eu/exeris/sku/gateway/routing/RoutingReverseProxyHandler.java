@@ -20,7 +20,6 @@ import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -340,28 +339,9 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
         try {
             String payloadB64 = token.substring(firstDot + 1, secondDot);
             byte[] jsonBytes = Base64.getUrlDecoder().decode(payloadB64);
-            String json = new String(jsonBytes, StandardCharsets.UTF_8);
-
-            Map<String, String> claims = new HashMap<>(4);
-            extractJsonString(json, "sub", claims);
-            extractJsonString(json, "iss", claims);
-            extractJsonString(json, "tenant_id", claims);
-            extractJsonString(json, "tid", claims);
-            return claims;
+            return TopLevelClaims.read(jsonBytes, "sub", "iss", "tenant_id", "tid");
         } catch (Exception e) {
             return Map.of();
-        }
-    }
-
-    private static void extractJsonString(String json, String key, Map<String, String> out) {
-        String pattern = "\"" + key + "\":\"";
-        int idx = json.indexOf(pattern);
-        if (idx >= 0) {
-            int start = idx + pattern.length();
-            int end = json.indexOf('"', start);
-            if (end > start) {
-                out.put(key, json.substring(start, end));
-            }
         }
     }
 
