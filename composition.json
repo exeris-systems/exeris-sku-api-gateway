@@ -1,0 +1,196 @@
+{
+  "schemaVersion" : 2,
+  "stamp" : {
+    "validated" : true,
+    "compositionVersion" : "0.1.0",
+    "contentBinding" : "sha256:ca110b5f9c149f08b1b7d1ec8bf134943233ba8d133e41247438a1413d169bf5"
+  },
+  "modules" : [
+    {
+      "name" : "CircuitBreakerModule",
+      "packageName" : "eu.exeris.caps.breaker",
+      "qualifiedName" : "eu.exeris.caps.breaker.CircuitBreakerModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.breaker.api.CircuitBreakerRegistry",
+            "version" : "0.1.0"
+          },
+          {
+            "service" : "eu.exeris.caps.breaker.api.CircuitBreakerAdmin",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "CorsPolicyModule",
+      "packageName" : "eu.exeris.caps.corspolicy",
+      "qualifiedName" : "eu.exeris.caps.corspolicy.CorsPolicyModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.corspolicy.api.CorsPolicy",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "GatewayCoreModule",
+      "packageName" : "eu.exeris.caps.gatewaycore",
+      "qualifiedName" : "eu.exeris.caps.gatewaycore.GatewayCoreModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.gatewaycore.api.GatewayLifecycle",
+            "version" : "0.1.0"
+          },
+          {
+            "service" : "eu.exeris.caps.gatewaycore.api.IngressBootstrap",
+            "version" : "0.1.0"
+          },
+          {
+            "service" : "eu.exeris.caps.gatewaycore.api.PolicyChain",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ],
+        "lifecycleOwner" : "eu.exeris.caps.gatewaycore.GatewayCoreModule"
+      }
+    },
+    {
+      "name" : "JwtValidationModule",
+      "packageName" : "eu.exeris.caps.jwt",
+      "qualifiedName" : "eu.exeris.caps.jwt.JwtValidationModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.jwt.api.JwtAdmissionPolicy",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [
+          {
+            "service" : "eu.exeris.caps.serviceboundarycore.api.RequestFilterChain",
+            "versionRange" : "[0.1.0,0.2.0)",
+            "optional" : true
+          }
+        ],
+        "lifecycleOwner" : "eu.exeris.caps.jwt.JwtValidationModule"
+      }
+    },
+    {
+      "name" : "ObservabilityModule",
+      "packageName" : "eu.exeris.caps.observability",
+      "qualifiedName" : "eu.exeris.caps.observability.ObservabilityModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.observability.api.GatewayObservabilityService",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "UpstreamPoolModule",
+      "packageName" : "eu.exeris.caps.pool",
+      "qualifiedName" : "eu.exeris.caps.pool.UpstreamPoolModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.pool.api.UpstreamPoolService",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "RateLimitModule",
+      "packageName" : "eu.exeris.caps.ratelimit",
+      "qualifiedName" : "eu.exeris.caps.ratelimit.RateLimitModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.ratelimit.api.RateLimitPolicy",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [
+          {
+            "service" : "eu.exeris.caps.serviceboundarycore.api.RequestFilterChain",
+            "versionRange" : "[0.1.0,0.2.0)",
+            "optional" : true
+          }
+        ],
+        "lifecycleOwner" : "eu.exeris.caps.ratelimit.RateLimitModule"
+      }
+    },
+    {
+      "name" : "RequestRoutingModule",
+      "packageName" : "eu.exeris.caps.routing",
+      "qualifiedName" : "eu.exeris.caps.routing.RequestRoutingModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.routing.api.RequestRouter",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "WafModule",
+      "packageName" : "eu.exeris.caps.waf",
+      "qualifiedName" : "eu.exeris.caps.waf.WafModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.waf.api.WafPolicy",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    }
+  ],
+  "resolutions" : [
+    {
+      "module" : "eu.exeris.caps.jwt.JwtValidationModule",
+      "service" : "eu.exeris.caps.serviceboundarycore.api.RequestFilterChain",
+      "versionRange" : "[0.1.0,0.2.0)",
+      "optional" : true,
+      "satisfied" : false,
+      "providers" : [ ]
+    },
+    {
+      "module" : "eu.exeris.caps.ratelimit.RateLimitModule",
+      "service" : "eu.exeris.caps.serviceboundarycore.api.RequestFilterChain",
+      "versionRange" : "[0.1.0,0.2.0)",
+      "optional" : true,
+      "satisfied" : false,
+      "providers" : [ ]
+    }
+  ],
+  "initOrder" : [
+    "eu.exeris.caps.breaker.CircuitBreakerModule",
+    "eu.exeris.caps.corspolicy.CorsPolicyModule",
+    "eu.exeris.caps.gatewaycore.GatewayCoreModule",
+    "eu.exeris.caps.jwt.JwtValidationModule",
+    "eu.exeris.caps.observability.ObservabilityModule",
+    "eu.exeris.caps.pool.UpstreamPoolModule",
+    "eu.exeris.caps.ratelimit.RateLimitModule",
+    "eu.exeris.caps.routing.RequestRoutingModule",
+    "eu.exeris.caps.waf.WafModule"
+  ],
+  "warnings" : [
+    "module eu.exeris.caps.jwt.JwtValidationModule @Requires service eu.exeris.caps.serviceboundarycore.api.RequestFilterChain version [0.1.0,0.2.0) but no @CapabilityModule provides it (optional — skipped)",
+    "module eu.exeris.caps.ratelimit.RateLimitModule @Requires service eu.exeris.caps.serviceboundarycore.api.RequestFilterChain version [0.1.0,0.2.0) but no @CapabilityModule provides it (optional — skipped)"
+  ]
+}

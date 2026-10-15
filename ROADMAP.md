@@ -1,3 +1,12 @@
+---
+title: "exeris-sku-api-gateway — Roadmap"
+type: roadmap
+visibility: public
+owning-repo: exeris-sku-api-gateway
+status: active
+last-verified: 2026-10-15
+---
+
 # exeris-sku-api-gateway — Roadmap
 
 Status: **poc**. Version line: **0.1.x**. Licence: Exeris Commercial License (ADR-023), entitlement id
@@ -13,18 +22,19 @@ Milestones are versions, not dates. Dates appear only on what has shipped; nothi
 ## Where this sits
 
 Tier 3 Platform SKU of the Gateway family (HLA §3.3; ADR-024, ADR-053). A runnable application that boots
-the kernel HTTP subsystem, instantiates `GatewayCoreModule`, registers per-cap policy adapters
-(`CorsGatewayPolicy`, `RateLimitGatewayPolicy`, `WafGatewayPolicy`, `JwtGatewayPolicy`,
-`CircuitBreakerGatewayPolicy`, `RoutingGatewayPolicy`, `ObservabilityGatewayPolicy`) and forwards through
-a zero-copy reverse proxy on the kernel client engine. It composes nine caps: `gateway-core`, `cors-policy`,
+the kernel HTTP subsystem, instantiates `GatewayCoreModule`, registers six policy adapters
+(`RequestSizeGatewayPolicy`, `CorsGatewayPolicy`, `RateLimitGatewayPolicy`, `WafGatewayPolicy`,
+`JwtGatewayPolicy`, `RoutingGatewayPolicy`), wraps the ingress with `CircuitBreakerIngress` and
+`ObservabilityIngress`, and forwards through a reverse proxy on the kernel client engine. It composes nine caps: `gateway-core`, `cors-policy`,
 `rate-limiting`, `jwt-validation`, `request-routing`, `upstream-pool`, `circuit-breaker`,
-`gateway-observability` and `waf-rules`. Nine test classes: one integration test per concern plus a smoke test.
+`gateway-observability` and `waf-rules`. The tests are one integration test per concern, the assembled gateway, configuration,
+licence enforcement, a smoke test and the real application in its own JVM (`GatewayProcessIT`).
 
-The import is on the local `feat/import-0.1.0` branch. It already: carries no application-specific routes
+The import is the state this roadmap starts from. It already: carries no application-specific routes
 and no benchmark handlers, in code or in the image (routes come from `EXERIS_GATEWAY_ROUTES`, which is
 required); serves observability and diagnostic endpoints only on a separate management listener, off by
 default, bound to `127.0.0.1` by default, never on ingress and never in the JWT skip list; refuses to
-start with JWT enabled and no signing key; keeps CORS off unless origins are configured; drops client
+start with JWT enabled and no key source, issuer or audience; keeps CORS off unless origins are configured; drops client
 `Forwarded` / `X-Forwarded-*`; answers `413` over the request-size limit; reclaims an idle upstream
 connection; refuses `https` upstreams (TLS is not provided); and declares its own entitlement
 `exeris-sku-api-gateway`. This roadmap starts from that state.
@@ -35,7 +45,7 @@ Gaps between the inventory and the code, found in the code:
   `tls-termination` and `observability-bridge`. None is composed; `waf-rules` and `gateway-observability` are
   composed and not listed.
 - Modules are constructed by hand in `main`, configured by environment variables; `composition.json`
-  is generated but is not what drives the boot. The module `requires` lists in it are empty.
+  is generated but is not what drives the boot. Its module `requires` lists are empty except the optional `RequestFilterChain` of `jwt-validation` and `rate-limiting`, which no composed cap provides.
 - `CircuitBreakerAdmin` is not wired in the SKU, and the management listener has no admission of its own.
 
 **Upstream constraints this repo does not own:**
@@ -46,7 +56,8 @@ Gaps between the inventory and the code, found in the code:
 | Each cap's own 0.1.0 / 0.2.0 milestones | The SKU consumes `[0.1.0,0.2.0)` ranges of all nine | the nine cap repos |
 | `RequestFilterChain` contract (ADR-099) | 0.2.0 removes the SKU-side adapters | `exeris-caps-service-boundary-core` |
 | ADR on the response-side seam (gateway-core 0.2.0) | Entry condition: no policy cap, and so no SKU migration, starts its 0.2.0 before it is accepted | `exeris-caps-gateway-core`, `exeris-docs` |
-| Kernel `HttpExchange` does not expose the peer address yet | Needed for `X-Forwarded-For` and per-client rate-limit keys; until then the gateway sets no `X-Forwarded-For` | `exeris-kernel` |
+| Kernel `HttpExchange` does not expose the peer address yet | Needed for `X-Forwarded-For`, per-client rate-limit keys and `IP_HASH` host selection; until then the gateway sets no `X-Forwarded-For` and `IP_HASH` selects without a key, rotating over the available hosts | `exeris-kernel` |
+| `exeris-caps-cors-policy` has no public construction path for `CorsPolicy` (its ROADMAP item `CorsPolicies`) | The SKU builds its CORS policy with `CorsPolicies`; it compiles only against a `cors-policy` that has it | `exeris-caps-cors-policy` |
 | Kernel buffers HTTP/1.1 request bodies | The request-size limit bounds what is forwarded, not memory | `exeris-kernel` |
 | No `composition.json` reader; manifest emitted to a source root, not the runtime classpath | The boot cannot be manifest-driven yet | SKU scaffold, `exeris-tooling` |
 | HLA §3.3 composition differs from the code | Registry and whitepaper describe a different SKU | `exeris-docs` |
@@ -83,7 +94,10 @@ Gaps between the inventory and the code, found in the code:
 - [ ] Cap dependency ranges moved to `[0.2.0,0.3.0)` for every cap whose binding replaces an SKU adapter
 - [ ] Per-client rate-limit keys and `X-Forwarded-For` use the peer address once the kernel exposes it (constraint above);
       the request-size limit stays documented as bounding what is forwarded, not memory
-- [ ] Remove the seven `*GatewayPolicy` adapters; policies bind to `RequestFilterChain` through each cap's binding
+- [ ] Remove the six `*GatewayPolicy` adapters, and decide what becomes of the `CircuitBreakerIngress` and
+      `ObservabilityIngress` wrappers; policies bind to `RequestFilterChain` through each cap's binding
+- [ ] JWKS keys loaded at start, so that the first request after a boot does not wait for the fetch (the
+      `jwt-validation` capability loads them on the first request that needs them)
 - [ ] Response-side behaviour (CORS headers, outcome recording, access logging, header mutation) follows the
       response-side ADR (entry condition: accepted before this milestone starts; see gateway-core 0.2.0)
 - [ ] Boot driven by the composition manifest rather than hand-constructed modules, once the SKU scaffold

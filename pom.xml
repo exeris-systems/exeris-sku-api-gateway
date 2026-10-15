@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>eu.exeris.sku</groupId>
+    <artifactId>exeris-sku-api-gateway</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>Exeris SKU :: API Gateway</name>
+    <description>
+        Tier 3 Platform SKU composition for the API Gateway family.
+        Runs kernel-direct on Exeris Kernel, composing Gateway Core with the policy capabilities
+        and acting as a reverse proxy and ingress dispatcher.
+    </description>
+    <url>https://github.com/exeris-systems/exeris-sku-api-gateway</url>
+    <inceptionYear>2026</inceptionYear>
+
+    <organization>
+        <name>Exeris Systems</name>
+        <url>https://exeris.eu</url>
+    </organization>
+
+    <!-- commercial per ADR-023 — source-available under the Exeris Commercial License -->
+    <licenses>
+        <license>
+            <name>Exeris Commercial License</name>
+            <url>https://exeris.eu/licenses/commercial-1.1.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <!-- JDK 25 LTS, matching the ecosystem baseline. Deliberately no preview flag anywhere. -->
+        <maven.compiler.release>25</maven.compiler.release>
+
+        <exeris.sdk.version>0.12.0</exeris.sdk.version>
+        <exeris.kernel.version>0.13.0-SNAPSHOT</exeris.kernel.version>
+        <exeris.tooling.version>0.10.0</exeris.tooling.version>
+
+        <junit.version>5.11.4</junit.version>
+        <assertj.version>3.27.7</assertj.version>
+    </properties>
+
+    <dependencies>
+        <!-- Layer 1 Substrate Aggregate Capability -->
+        <dependency>
+            <groupId>eu.exeris.caps</groupId>
+            <artifactId>exeris-caps-gateway-core</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- Layer 3 Gateway Policy Capability: CORS -->
+        <dependency>
+            <groupId>eu.exeris.caps</groupId>
+            <artifactId>exeris-caps-cors-policy</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- Layer 3 Gateway Policy Capability: Rate Limiting -->
+        <dependency>
+            <groupId>eu.exeris.caps</groupId>
+            <artifactId>exeris-caps-rate-limiting</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- Layer 3 Gateway Policy Capability: JWT Validation -->
+        <dependency>
+            <groupId>eu.exeris.caps</groupId>
+            <artifactId>exeris-caps-jwt-validation</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- Layer 3 Gateway Policy Capability: Request Routing -->
+        <dependency>
+            <groupId>eu.exeris.caps</groupId>
+            <artifactId>exeris-caps-request-routing</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- Layer 2/3 Gateway Policy Capability: Upstream Pool & Load Balancing -->
+        <dependency>
+            <groupId>eu.exeris.caps</groupId>
+            <artifactId>exeris-caps-upstream-pool</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- Layer 3 Gateway Policy Capability: Circuit Breaker -->
+        <dependency>
+            <groupId>eu.exeris.caps</groupId>
+            <artifactId>exeris-caps-circuit-breaker</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- Layer 3 Gateway Policy Capability: Observability -->
+        <dependency>
+            <groupId>eu.exeris.caps</groupId>
+            <artifactId>exeris-caps-gateway-observability</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- Layer 3 Gateway Policy Capability: WAF Rules Engine -->
+        <dependency>
+            <groupId>eu.exeris.caps</groupId>
+            <artifactId>exeris-caps-waf-rules</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+        </dependency>
+
+        <!-- Kernel: a SKU chooses the kernel driver, so Core and the Community driver are main scope here -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-spi</artifactId>
+            <version>${exeris.kernel.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-core</artifactId>
+            <version>${exeris.kernel.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-community</artifactId>
+            <version>${exeris.kernel.version}</version>
+        </dependency>
+
+        <!-- Exeris SDK Composition Runtime -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-sdk-composition-runtime</artifactId>
+            <version>${exeris.sdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-sdk-composition-spec</artifactId>
+            <version>${exeris.sdk.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-sdk-composition-lifecycle</artifactId>
+            <version>${exeris.sdk.version}</version>
+        </dependency>
+
+        <!-- Licence-gate tests: the entitlement TCK -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-kernel-tck</artifactId>
+            <version>${exeris.kernel.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Composition manifest generation: the capability graph and stamp, as the codegen emits them -->
+        <dependency>
+            <groupId>eu.exeris</groupId>
+            <artifactId>exeris-codegen-core</artifactId>
+            <version>${exeris.tooling.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- JUnit 5 + AssertJ only (ADR-058). No mocking frameworks. -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>${assertj.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.16.0</version>
+                <configuration>
+                    <release>${maven.compiler.release}</release>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.6</version>
+                <configuration>
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>eu.exeris.sku.gateway.GatewaySkuApplication</mainClass>
+                                </transformer>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
