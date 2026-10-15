@@ -45,7 +45,7 @@ Gaps between the inventory and the code, found in the code:
   `tls-termination` and `observability-bridge`. None is composed; `waf-rules` and `gateway-observability` are
   composed and not listed.
 - Modules are constructed by hand in `main`, configured by environment variables; `composition.json`
-  is generated but is not what drives the boot. Its module `requires` lists are empty except `rate-limiting`'s optional `RequestFilterChain`, which no composed cap provides.
+  is generated but is not what drives the boot. Its module `requires` lists are empty except the optional `RequestFilterChain` of `jwt-validation` and `rate-limiting`, which no composed cap provides.
 - `CircuitBreakerAdmin` is not wired in the SKU, and the management listener has no admission of its own.
 
 **Upstream constraints this repo does not own:**
