@@ -216,10 +216,21 @@ class GatewayProcessIT {
     }
 
     @Test
-    @DisplayName("JWT enabled without a secret exits with the configuration status before the kernel starts")
-    void jwtWithoutSecretDoesNotStart() throws Exception {
+    @DisplayName("JWT enabled without a key source exits with the configuration status before the kernel starts")
+    void jwtWithoutKeySourceDoesNotStart() throws Exception {
         process = launch(Map.of(
                 "EXERIS_JWT_ENABLED", "true",
+                "EXERIS_GATEWAY_ROUTES", "/api=http://127.0.0.1:1"));
+
+        assertThat(process.waitFor(30, TimeUnit.SECONDS)).isTrue();
+        assertThat(process.exitValue()).isEqualTo(GatewaySkuApplication.EXIT_CONFIG);
+    }
+
+    @Test
+    @DisplayName("A removed JWT setting exits with the configuration status before the kernel starts")
+    void removedJwtSettingDoesNotStart() throws Exception {
+        process = launch(Map.of(
+                "EXERIS_JWT_SECRET", "0123456789abcdef0123456789abcdef",
                 "EXERIS_GATEWAY_ROUTES", "/api=http://127.0.0.1:1"));
 
         assertThat(process.waitFor(30, TimeUnit.SECONDS)).isTrue();

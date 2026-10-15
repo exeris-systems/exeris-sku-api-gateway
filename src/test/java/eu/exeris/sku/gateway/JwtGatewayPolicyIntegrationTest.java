@@ -24,11 +24,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -40,7 +36,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("JwtGatewayPolicyIntegrationTest")
 class JwtGatewayPolicyIntegrationTest {
 
-    private static final String SECRET = "gateway-jwt-integration-test-secret-key-256";
+    private static final EdDsaTokens TOKENS = new EdDsaTokens();
 
     private GatewayCoreModule gatewayModule;
     private IngressBootstrap ingress;
@@ -69,9 +65,10 @@ class JwtGatewayPolicyIntegrationTest {
 
         // 3. JWT Admission Policy (-40)
         JwtAdmissionPolicy jwtPolicy = JwtAdmissionPolicies.builder()
-                .secret(SECRET)
-                .expectedIssuer("https://auth.example.com")
-                .leeway(Duration.ofSeconds(30))
+                .publicKey(EdDsaTokens.KID, TOKENS.publicKey())
+                .expectedIssuer(EdDsaTokens.ISSUER)
+                .expectedAudience(EdDsaTokens.AUDIENCE)
+                .clockSkew(Duration.ofSeconds(30))
                 .build();
         policyChain.addPolicy(new JwtGatewayPolicy(jwtPolicy, Set.of("/actuator/health"), List.of("/public/")));
 
@@ -106,7 +103,7 @@ class JwtGatewayPolicyIntegrationTest {
     @Test
     @DisplayName("Request with valid JWT is admitted and reaches upstream handler")
     void testValidJwtAdmitted() {
-        String token = createToken(SECRET, "user-42", "https://auth.example.com", System.currentTimeMillis() / 1000 + 3600);
+        String token = TOKENS.token();
 
         MockExchange exchange = new MockExchange(
                 HttpMethod.GET,
@@ -147,7 +144,7 @@ class JwtGatewayPolicyIntegrationTest {
     @Test
     @DisplayName("Request with forged signature short-circuits with 401 Unauthorized")
     void testForgedSignatureShortCircuits() {
-        String forgedToken = createToken("attacker-wrong-secret-key-32b", "user-attacker", "https://auth.example.com", System.currentTimeMillis() / 1000 + 3600);
+        String forgedToken = EdDsaTokens.forged();
 
         MockExchange exchange = new MockExchange(
                 HttpMethod.GET,
@@ -168,7 +165,7 @@ class JwtGatewayPolicyIntegrationTest {
     @Test
     @DisplayName("Request with expired token short-circuits with 401 Unauthorized")
     void testExpiredTokenShortCircuits() {
-        String expiredToken = createToken(SECRET, "user-42", "https://auth.example.com", System.currentTimeMillis() / 1000 - 3600);
+        String expiredToken = TOKENS.token(EdDsaTokens.KID, EdDsaTokens.ISSUER, EdDsaTokens.AUDIENCE, System.currentTimeMillis() / 1000 - 3600);
 
         MockExchange exchange = new MockExchange(
                 HttpMethod.GET,
@@ -233,26 +230,6 @@ class JwtGatewayPolicyIntegrationTest {
                 .filter(h -> h.name().equalsIgnoreCase(headerName))
                 .map(HttpHeader::value)
                 .findFirst();
-    }
-
-    private static String createToken(String secret, String sub, String iss, long exp) {
-        String headerJson = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
-        String payloadJson = "{\"sub\":\"" + sub + "\",\"iss\":\"" + iss + "\",\"exp\":" + exp + "}";
-
-        Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
-        String headerB64 = encoder.encodeToString(headerJson.getBytes(StandardCharsets.UTF_8));
-        String payloadB64 = encoder.encodeToString(payloadJson.getBytes(StandardCharsets.UTF_8));
-        String signingInput = headerB64 + "." + payloadB64;
-
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            byte[] sigBytes = mac.doFinal(signingInput.getBytes(StandardCharsets.UTF_8));
-            String sigB64 = encoder.encodeToString(sigBytes);
-            return signingInput + "." + sigB64;
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
     }
 
     private static final class MockExchange implements HttpExchange {

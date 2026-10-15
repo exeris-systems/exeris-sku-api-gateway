@@ -34,7 +34,7 @@ The import is the state this roadmap starts from. It already: carries no applica
 and no benchmark handlers, in code or in the image (routes come from `EXERIS_GATEWAY_ROUTES`, which is
 required); serves observability and diagnostic endpoints only on a separate management listener, off by
 default, bound to `127.0.0.1` by default, never on ingress and never in the JWT skip list; refuses to
-start with JWT enabled and no signing key; keeps CORS off unless origins are configured; drops client
+start with JWT enabled and no key source, issuer or audience; keeps CORS off unless origins are configured; drops client
 `Forwarded` / `X-Forwarded-*`; answers `413` over the request-size limit; reclaims an idle upstream
 connection; refuses `https` upstreams (TLS is not provided); and declares its own entitlement
 `exeris-sku-api-gateway`. This roadmap starts from that state.
@@ -96,6 +96,8 @@ Gaps between the inventory and the code, found in the code:
       the request-size limit stays documented as bounding what is forwarded, not memory
 - [ ] Remove the six `*GatewayPolicy` adapters, and decide what becomes of the `CircuitBreakerIngress` and
       `ObservabilityIngress` wrappers; policies bind to `RequestFilterChain` through each cap's binding
+- [ ] JWKS keys loaded at start, so that the first request after a boot does not wait for the fetch (the
+      `jwt-validation` capability loads them on the first request that needs them)
 - [ ] Response-side behaviour (CORS headers, outcome recording, access logging, header mutation) follows the
       response-side ADR (entry condition: accepted before this milestone starts; see gateway-core 0.2.0)
 - [ ] Boot driven by the composition manifest rather than hand-constructed modules, once the SKU scaffold

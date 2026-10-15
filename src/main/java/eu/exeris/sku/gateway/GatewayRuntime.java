@@ -130,12 +130,18 @@ public final class GatewayRuntime implements AutoCloseable {
 
         if (config.jwt() != null) {
             GatewayConfig.Jwt jwt = config.jwt();
-            JwtAdmissionPolicy policy = JwtAdmissionPolicies.builder()
-                    .secret(jwt.secret())
+            JwtAdmissionPolicies.Builder builder = JwtAdmissionPolicies.builder()
                     .expectedIssuer(jwt.issuer())
-                    .expectedAudience(jwt.audience())
-                    .cacheCapacity(jwt.cacheCapacity())
-                    .build();
+                    .expectedAudience(jwt.audience());
+            if (jwt.jwksUri() != null) {
+                builder.jwksUri(jwt.jwksUri());
+            } else {
+                builder.publicKey(jwt.keyId(), jwt.publicKey());
+            }
+            if (jwt.acceptRs256()) {
+                builder.acceptRs256();
+            }
+            JwtAdmissionPolicy policy = builder.build();
             chain.addPolicy(new JwtGatewayPolicy(policy, openPaths, List.of()));
         }
 

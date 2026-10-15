@@ -56,7 +56,22 @@ The kernel's HTTP/1.1 server has already read a request body when the gateway se
 | `EXERIS_CORS_ALLOWED_ORIGINS` | comma-separated origins. CORS is off while this is unset; `*` is served only if written |
 | `EXERIS_RATELIMIT_ENABLED`, `_RPS`, `_BURST`, `_CAPACITY`, `_HEADERS` | token-bucket rate limit. It is one shared limit unless `EXERIS_RATELIMIT_KEY_HEADER` names a header. Use that only behind a trusted proxy that sets the header and replaces any client value, because the kernel does not tell a handler which address a request came from and a client chooses every header it sends |
 | `EXERIS_WAF_ENABLED`, `EXERIS_WAF_MODE` | `BLOCK` (default) or `DETECT`, which logs a match and lets the request through |
-| `EXERIS_JWT_ENABLED`, `EXERIS_JWT_SECRET`, `_ISSUER`, `_AUDIENCE`, `_CACHE_CAPACITY` | HS256 admission. The gateway has no built-in secret: with JWT enabled and no secret, or one shorter than 32 bytes, it refuses to start. `/health` and `/actuator/health` are the only paths that skip admission |
+| `EXERIS_JWT_ENABLED` | JWT admission, off by default. When on, the gateway verifies each token's signature and its `iss`, `aud`, `exp`, `nbf` and `sub`, and answers `401` otherwise. `/health` and `/actuator/health` are the only paths that skip admission. It refuses to start (exit 78) when the key source is missing or ambiguous, or when the issuer or the audience is missing |
+
+**JWT keys and claims.** The algorithm is EdDSA (Ed25519); the key source is how its keys reach the gateway. Set exactly one source:
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `EXERIS_JWT_JWKS_URI` | the issuer's JWKS, for example the one the Identity SKU's token issuer publishes. Recommended: the issuer can rotate keys. The URI must be `https`; `http` is refused unless the host is loopback (`localhost`, `127.0.0.1`, `::1`) | none |
+| `EXERIS_JWT_PUBLIC_KEY` or `EXERIS_JWT_PUBLIC_KEY_FILE` | a static public key as an X.509 PEM (`BEGIN PUBLIC KEY`), inline or from a file, for simple or offline setups. It needs `EXERIS_JWT_KEY_ID`; the two PEM settings exclude each other | none |
+| `EXERIS_JWT_KEY_ID` | the `kid` a token names for the static key; not used with a JWKS URI, whose document carries the key ids | none |
+| `EXERIS_JWT_ISSUER` | expected `iss`; required | none |
+| `EXERIS_JWT_AUDIENCE` | expected member of `aud`; required | none |
+| `EXERIS_JWT_ACCEPT_RS256` | also accept RS256 tokens verified by an RSA key of at least 2048 bits | `false` |
+
+The JWKS is fetched by the `jwt-validation` capability, not by the gateway, with a deadline and a size cap of its own and without following redirects. The fetch is lazy and shared: the first request after start loads the keys, and a request reloads them when they are older than the capability's refresh interval or names an unknown `kid`, at most once per its minimum interval; a failed fetch keeps the previous keys. No verification result is cached, so every request verifies its token's signature.
+
+`EXERIS_JWT_SECRET` (HS256) and `EXERIS_JWT_CACHE_CAPACITY` no longer exist. The gateway refuses to start while either is set, with JWT on or off, and the message names the replacement.
 | `EXERIS_CIRCUIT_BREAKER_ENABLED`, `EXERIS_CB_SLIDING_WINDOW`, `_MIN_CALLS`, `_FAILURE_RATE`, `_WAIT_DURATION_SEC`, `_PERMITTED_HALF_OPEN` | one breaker per route. `_PERMITTED_HALF_OPEN` is 1 to 1024, and `_MIN_CALLS` may not exceed `_SLIDING_WINDOW`; a value outside that stops the gateway at start |
 | `EXERIS_OBSERVABILITY_ENABLED` | request metrics, W3C trace propagation and access recording |
 

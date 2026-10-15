@@ -6,10 +6,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
+import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("GatewayRuntime: the assembled gateway")
 class GatewayRuntimeTest {
 
-    private static final String SECRET = "0123456789abcdef0123456789abcdef";
+    private static final EdDsaTokens TOKENS = new EdDsaTokens();
+    private static final String[] JWT_STATIC_KEY = {
+        "EXERIS_JWT_ENABLED", "true", "EXERIS_JWT_PUBLIC_KEY", TOKENS.pem(), "EXERIS_JWT_KEY_ID", EdDsaTokens.KID,
+        "EXERIS_JWT_ISSUER", EdDsaTokens.ISSUER, "EXERIS_JWT_AUDIENCE", EdDsaTokens.AUDIENCE};
     private static final List<String> DIAGNOSTIC_PATHS =
             List.of("/metrics", "/actuator/metrics", "/actuator/allocations", "/allocations", "/dashboard", "/observability");
 
@@ -31,6 +32,12 @@ class GatewayRuntimeTest {
         if (gateway != null) {
             gateway.close();
         }
+    }
+
+    private static String[] with(String[] base, String... more) {
+        String[] all = java.util.Arrays.copyOf(base, base.length + more.length);
+        System.arraycopy(more, 0, all, base.length, more.length);
+        return all;
     }
 
     private void start(String... kv) throws Exception {
@@ -99,8 +106,7 @@ class GatewayRuntimeTest {
     @Test
     @DisplayName("Diagnostic paths are not in the JWT bypass list: with JWT on, they are refused without a token")
     void diagnosticsNotInJwtBypass() throws Exception {
-        start("EXERIS_JWT_ENABLED", "true", "EXERIS_JWT_SECRET", SECRET,
-                "EXERIS_OBSERVABILITY_ENABLED", "true", "EXERIS_MANAGEMENT_ENABLED", "true");
+        start(with(JWT_STATIC_KEY, "EXERIS_OBSERVABILITY_ENABLED", "true", "EXERIS_MANAGEMENT_ENABLED", "true"));
 
         for (String path : DIAGNOSTIC_PATHS) {
             assertThat(send(path).status()).as(path).isEqualTo(401);
@@ -154,7 +160,7 @@ class GatewayRuntimeTest {
     @Test
     @DisplayName("With JWT on, the health path is open with a query string and /healthz is not")
     void jwtLeavesHealthOpenWithQuery() throws Exception {
-        start("EXERIS_GATEWAY_ROUTES", "/=http://backend:8080", "EXERIS_JWT_ENABLED", "true", "EXERIS_JWT_SECRET", SECRET);
+        start(with(JWT_STATIC_KEY, "EXERIS_GATEWAY_ROUTES", "/=http://backend:8080"));
 
         assertThat(send("/health").status()).isEqualTo(200);
         assertThat(send("/health?x=1").status()).isEqualTo(200);
@@ -165,14 +171,49 @@ class GatewayRuntimeTest {
     @Test
     @DisplayName("With JWT on, a request without a valid token is refused and a valid one is forwarded")
     void jwtAdmission() throws Exception {
-        start("EXERIS_JWT_ENABLED", "true", "EXERIS_JWT_SECRET", SECRET);
+        start(JWT_STATIC_KEY);
 
         assertThat(send("/api/x").status()).isEqualTo(401);
+        assertThat(send("/api/x", new HttpHeader("Authorization", "Bearer " + EdDsaTokens.forged())).status())
+                .isEqualTo(401);
         assertThat(engine.requests).isEmpty();
 
-        TestExchange ok = send("/api/x", new HttpHeader("Authorization", "Bearer " + token(SECRET)));
+        TestExchange ok = send("/api/x", new HttpHeader("Authorization", "Bearer " + TOKENS.token()));
         assertThat(ok.status()).isEqualTo(200);
         assertThat(engine.requests).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("With a JWKS URI, the key is fetched from the issuer's JWKS once and a token it signed is forwarded")
+    void jwtAdmissionFromJwksUri() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger fetches = new java.util.concurrent.atomic.AtomicInteger();
+        com.sun.net.httpserver.HttpServer jwks = com.sun.net.httpserver.HttpServer.create(
+                new InetSocketAddress("127.0.0.1", 0), 0);
+        byte[] body = TOKENS.jwks(EdDsaTokens.KID).getBytes(StandardCharsets.UTF_8);
+        jwks.createContext("/.well-known/jwks.json", exchange -> {
+            fetches.incrementAndGet();
+            exchange.getResponseHeaders().add("Content-Type", "application/jwk-set+json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        jwks.start();
+        try {
+            start("EXERIS_JWT_ENABLED", "true", "EXERIS_JWT_ISSUER", EdDsaTokens.ISSUER,
+                    "EXERIS_JWT_AUDIENCE", EdDsaTokens.AUDIENCE,
+                    "EXERIS_JWT_JWKS_URI", "http://127.0.0.1:" + jwks.getAddress().getPort() + "/.well-known/jwks.json");
+
+            assertThat(send("/api/x").status()).isEqualTo(401);
+            String bearer = "Bearer " + TOKENS.token();
+            assertThat(send("/api/x", new HttpHeader("Authorization", bearer)).status()).isEqualTo(200);
+            assertThat(send("/api/x", new HttpHeader("Authorization", bearer)).status()).isEqualTo(200);
+            assertThat(send("/api/x", new HttpHeader("Authorization", "Bearer " + EdDsaTokens.forged())).status())
+                    .isEqualTo(401);
+            assertThat(send("/health").status()).isEqualTo(200);
+            assertThat(fetches.get()).as("keys are cached between requests").isEqualTo(1);
+        } finally {
+            jwks.stop(0);
+        }
     }
 
     @Test
@@ -315,15 +356,5 @@ class GatewayRuntimeTest {
         gateway.module().initialize();
         gateway.module().ready();
         assertThat(send("/health").status()).isEqualTo(200);
-    }
-
-    private static String token(String secret) throws Exception {
-        Base64.Encoder enc = Base64.getUrlEncoder().withoutPadding();
-        String input = enc.encodeToString("{\"alg\":\"HS256\",\"typ\":\"JWT\"}".getBytes(StandardCharsets.UTF_8)) + "."
-                + enc.encodeToString(("{\"sub\":\"u1\",\"exp\":" + (System.currentTimeMillis() / 1000 + 3600) + "}")
-                .getBytes(StandardCharsets.UTF_8));
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        return input + "." + enc.encodeToString(mac.doFinal(input.getBytes(StandardCharsets.UTF_8)));
     }
 }

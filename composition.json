@@ -3,7 +3,7 @@
   "stamp" : {
     "validated" : true,
     "compositionVersion" : "0.1.0",
-    "contentBinding" : "sha256:1a0ea4c5bf9360267fb434d0675fa9449254e5e6dcdc556bcc18c636c9cf5f73"
+    "contentBinding" : "sha256:ca110b5f9c149f08b1b7d1ec8bf134943233ba8d133e41247438a1413d169bf5"
   },
   "modules" : [
     {
@@ -69,10 +69,17 @@
         "provides" : [
           {
             "service" : "eu.exeris.caps.jwt.api.JwtAdmissionPolicy",
-            "version" : "1.0.0"
+            "version" : "0.1.0"
           }
         ],
-        "requires" : [ ]
+        "requires" : [
+          {
+            "service" : "eu.exeris.caps.serviceboundarycore.api.RequestFilterChain",
+            "versionRange" : "[0.1.0,0.2.0)",
+            "optional" : true
+          }
+        ],
+        "lifecycleOwner" : "eu.exeris.caps.jwt.JwtValidationModule"
       }
     },
     {
@@ -155,6 +162,14 @@
   ],
   "resolutions" : [
     {
+      "module" : "eu.exeris.caps.jwt.JwtValidationModule",
+      "service" : "eu.exeris.caps.serviceboundarycore.api.RequestFilterChain",
+      "versionRange" : "[0.1.0,0.2.0)",
+      "optional" : true,
+      "satisfied" : false,
+      "providers" : [ ]
+    },
+    {
       "module" : "eu.exeris.caps.ratelimit.RateLimitModule",
       "service" : "eu.exeris.caps.serviceboundarycore.api.RequestFilterChain",
       "versionRange" : "[0.1.0,0.2.0)",
@@ -175,6 +190,7 @@
     "eu.exeris.caps.waf.WafModule"
   ],
   "warnings" : [
+    "module eu.exeris.caps.jwt.JwtValidationModule @Requires service eu.exeris.caps.serviceboundarycore.api.RequestFilterChain version [0.1.0,0.2.0) but no @CapabilityModule provides it (optional — skipped)",
     "module eu.exeris.caps.ratelimit.RateLimitModule @Requires service eu.exeris.caps.serviceboundarycore.api.RequestFilterChain version [0.1.0,0.2.0) but no @CapabilityModule provides it (optional — skipped)"
   ]
 }

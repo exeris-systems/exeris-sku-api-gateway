@@ -6,6 +6,11 @@ import java.io.IOException;
 import java.io.Reader;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.security.GeneralSecurityException;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.spec.X509EncodedKeySpec;
+import java.util.Base64;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -59,9 +64,6 @@ public record GatewayConfig(
     /** Key naming a properties file that carries any of the settings below. */
     public static final String CONFIG_FILE_KEY = "EXERIS_GATEWAY_CONFIG";
 
-    /** Smallest HMAC secret accepted, in bytes: the output size of HMAC-SHA-256 (RFC 7518 section 3.2). */
-    public static final int MIN_JWT_SECRET_BYTES = 32;
-
     static final String HTTP_BIND_HOST = "EXERIS_HTTP_BIND_HOST";
     static final String HTTP_PORT = "EXERIS_HTTP_PORT";
     static final String HTTP_PORT_ALIAS = "PORT";
@@ -97,10 +99,18 @@ public record GatewayConfig(
     static final String WAF_ENABLED = "EXERIS_WAF_ENABLED";
     static final String WAF_MODE = "EXERIS_WAF_MODE";
     static final String JWT_ENABLED = "EXERIS_JWT_ENABLED";
-    static final String JWT_SECRET = "EXERIS_JWT_SECRET";
+    static final String JWT_JWKS_URI = "EXERIS_JWT_JWKS_URI";
+    static final String JWT_PUBLIC_KEY = "EXERIS_JWT_PUBLIC_KEY";
+    static final String JWT_PUBLIC_KEY_FILE = "EXERIS_JWT_PUBLIC_KEY_FILE";
+    static final String JWT_KEY_ID = "EXERIS_JWT_KEY_ID";
     static final String JWT_ISSUER = "EXERIS_JWT_ISSUER";
     static final String JWT_AUDIENCE = "EXERIS_JWT_AUDIENCE";
-    static final String JWT_CACHE_CAPACITY = "EXERIS_JWT_CACHE_CAPACITY";
+    static final String JWT_ACCEPT_RS256 = "EXERIS_JWT_ACCEPT_RS256";
+    /** Settings that no longer exist, each with the sentence that names what replaces it. */
+    static final Map<String, String> REMOVED_JWT = Map.of(
+            "EXERIS_JWT_SECRET", "HS256 is no longer accepted: set " + JWT_JWKS_URI
+                    + " (key rotation) or " + JWT_PUBLIC_KEY + " with " + JWT_KEY_ID + " (a static EdDSA key)",
+            "EXERIS_JWT_CACHE_CAPACITY", "no verification result is cached any more: remove it");
     static final String CB_ENABLED = "EXERIS_CIRCUIT_BREAKER_ENABLED";
     static final String CB_SLIDING_WINDOW = "EXERIS_CB_SLIDING_WINDOW";
     static final String CB_MIN_CALLS = "EXERIS_CB_MIN_CALLS";
@@ -119,7 +129,8 @@ public record GatewayConfig(
             ACTIVE_UNHEALTHY_THRESHOLD,
             MANAGEMENT_ENABLED, MANAGEMENT_BIND_HOST, MANAGEMENT_PORT, CORS_ALLOWED_ORIGINS, RATELIMIT_ENABLED, RATELIMIT_RPS, RATELIMIT_BURST,
             RATELIMIT_CAPACITY, RATELIMIT_HEADERS, RATELIMIT_KEY_HEADER, WAF_ENABLED, WAF_MODE, JWT_ENABLED,
-            JWT_SECRET, JWT_ISSUER, JWT_AUDIENCE, JWT_CACHE_CAPACITY, CB_ENABLED, CB_SLIDING_WINDOW,
+            JWT_JWKS_URI, JWT_PUBLIC_KEY, JWT_PUBLIC_KEY_FILE, JWT_KEY_ID, JWT_ISSUER, JWT_AUDIENCE,
+            JWT_ACCEPT_RS256, "EXERIS_JWT_SECRET", "EXERIS_JWT_CACHE_CAPACITY", CB_ENABLED, CB_SLIDING_WINDOW,
             CB_MIN_CALLS, CB_FAILURE_RATE, CB_WAIT_DURATION_SEC, CB_PERMITTED_HALF_OPEN, OBSERVABILITY_ENABLED);
 
     private static final Pattern CLUSTER_NAME = Pattern.compile("[A-Za-z0-9._-]+");
@@ -244,20 +255,17 @@ public record GatewayConfig(
     }
 
     /**
-     * JWT admission with a shared HMAC secret.
+     * JWT admission. The key source is exactly one of {@code jwksUri} and {@code publicKey}.
      *
-     * @param secret         the HMAC secret; at least {@value #MIN_JWT_SECRET_BYTES} bytes
-     * @param issuer         the required issuer, or {@code null}
-     * @param audience       the required audience, or {@code null}
-     * @param cacheCapacity  validated-token cache size
+     * @param jwksUri     the issuer's JWKS, fetched by the capability off the request path, or {@code null}
+     * @param publicKey   a static verification key, or {@code null}
+     * @param keyId       the {@code kid} of {@code publicKey}, or {@code null} with a JWKS URI
+     * @param issuer      the required issuer
+     * @param audience    the required audience
+     * @param acceptRs256 whether RS256 is accepted next to EdDSA
      */
-    public record Jwt(String secret, String issuer, String audience, int cacheCapacity) {
-
-        @Override
-        public String toString() {
-            return "Jwt[secret=<redacted>, issuer=" + issuer + ", audience=" + audience
-                    + ", cacheCapacity=" + cacheCapacity + "]";
-        }
+    public record Jwt(URI jwksUri, PublicKey publicKey, String keyId, String issuer, String audience,
+                      boolean acceptRs256) {
     }
 
     /**
@@ -379,21 +387,14 @@ public record GatewayConfig(
             waf = new Waf(mode.equals("DETECT"));
         }
 
+        for (Map.Entry<String, String> removed : REMOVED_JWT.entrySet()) {
+            if (!in.string(removed.getKey(), "").isEmpty()) {
+                throw new GatewayConfigException(removed.getKey() + " is no longer supported: " + removed.getValue());
+            }
+        }
         Jwt jwt = null;
         if (in.bool(JWT_ENABLED, false)) {
-            String secret = in.string(JWT_SECRET, "");
-            if (secret.isEmpty()) {
-                throw new GatewayConfigException(JWT_ENABLED + " is true but " + JWT_SECRET
-                        + " is not set: the gateway has no built-in secret and will not start without one");
-            }
-            if (secret.getBytes(StandardCharsets.UTF_8).length < MIN_JWT_SECRET_BYTES) {
-                throw new GatewayConfigException(JWT_SECRET + " is shorter than " + MIN_JWT_SECRET_BYTES
-                        + " bytes, the size an HMAC-SHA-256 key needs");
-            }
-            String issuer = in.string(JWT_ISSUER, "");
-            String audience = in.string(JWT_AUDIENCE, "");
-            jwt = new Jwt(secret, issuer.isEmpty() ? null : issuer, audience.isEmpty() ? null : audience,
-                    in.integer(JWT_CACHE_CAPACITY, 16_384, 1, 100_000_000));
+            jwt = jwt(in);
         }
 
         CircuitBreaker circuitBreaker = null;
@@ -426,6 +427,90 @@ public record GatewayConfig(
         return new GatewayConfig(http, upstream, routes, clusters, pool,
                 management, corsOrigins, rateLimit, waf, jwt, circuitBreaker,
                 in.bool(OBSERVABILITY_ENABLED, false));
+    }
+
+    private static Jwt jwt(Source in) {
+        String uriText = in.string(JWT_JWKS_URI, "");
+        String pem = in.string(JWT_PUBLIC_KEY, "");
+        String pemFile = in.string(JWT_PUBLIC_KEY_FILE, "");
+        String keyId = in.string(JWT_KEY_ID, "");
+        if (!pem.isEmpty() && !pemFile.isEmpty()) {
+            throw new GatewayConfigException(JWT_PUBLIC_KEY + " and " + JWT_PUBLIC_KEY_FILE + " are both set: use one");
+        }
+        boolean staticKey = !pem.isEmpty() || !pemFile.isEmpty();
+        if (uriText.isEmpty() == !staticKey) {
+            throw new GatewayConfigException(JWT_ENABLED + " is true and needs exactly one key source: "
+                    + JWT_JWKS_URI + " or " + JWT_PUBLIC_KEY + " (or " + JWT_PUBLIC_KEY_FILE + ") with " + JWT_KEY_ID
+                    + (uriText.isEmpty() ? ", and neither is set" : ", and both are set"));
+        }
+        String issuer = in.string(JWT_ISSUER, "");
+        if (issuer.isEmpty()) {
+            throw new GatewayConfigException(JWT_ENABLED + " is true but " + JWT_ISSUER + " is not set");
+        }
+        String audience = in.string(JWT_AUDIENCE, "");
+        if (audience.isEmpty()) {
+            throw new GatewayConfigException(JWT_ENABLED + " is true but " + JWT_AUDIENCE + " is not set");
+        }
+        boolean rs256 = in.bool(JWT_ACCEPT_RS256, false);
+        if (!uriText.isEmpty()) {
+            if (!keyId.isEmpty()) {
+                throw new GatewayConfigException(JWT_KEY_ID + " belongs to " + JWT_PUBLIC_KEY
+                        + " and is not used with " + JWT_JWKS_URI + ": the JWKS carries the key ids");
+            }
+            return new Jwt(jwksUri(uriText), null, null, issuer, audience, rs256);
+        }
+        if (keyId.isEmpty()) {
+            throw new GatewayConfigException(JWT_KEY_ID + " is required with a static public key: a token names its key by kid");
+        }
+        if (pem.isEmpty()) {
+            try {
+                pem = Files.readString(Path.of(pemFile), StandardCharsets.UTF_8);
+            } catch (IOException | RuntimeException e) {
+                throw new GatewayConfigException(JWT_PUBLIC_KEY_FILE + " names a file that cannot be read: " + pemFile, e);
+            }
+        }
+        return new Jwt(null, publicKey(pem), keyId, issuer, audience, rs256);
+    }
+
+    /** A JWKS URI is https, or http on a loopback host. */
+    static URI jwksUri(String text) {
+        URI uri;
+        try {
+            uri = new URI(text);
+        } catch (URISyntaxException e) {
+            throw new GatewayConfigException(JWT_JWKS_URI + " is not a URI: " + text);
+        }
+        String scheme = uri.getScheme();
+        String host = uri.getHost();
+        if ("https".equalsIgnoreCase(scheme) && host != null) {
+            return uri;
+        }
+        if ("http".equalsIgnoreCase(scheme) && host != null
+                && (host.equals("localhost") || host.equals("127.0.0.1") || host.equals("[::1]") || host.equals("::1"))) {
+            return uri;
+        }
+        throw new GatewayConfigException(JWT_JWKS_URI + " must be https, or http only on a loopback host "
+                + "(localhost, 127.0.0.1, ::1): " + text);
+    }
+
+    /** Reads an X.509 SubjectPublicKeyInfo PEM holding an Ed25519 key, or an RSA key. */
+    static PublicKey publicKey(String pem) {
+        String body = pem.replace("-----BEGIN PUBLIC KEY-----", "").replace("-----END PUBLIC KEY-----", "")
+                .replaceAll("\\s", "");
+        byte[] der;
+        try {
+            der = Base64.getDecoder().decode(body);
+        } catch (IllegalArgumentException e) {
+            throw new GatewayConfigException(JWT_PUBLIC_KEY + " is not a PEM public key (BEGIN PUBLIC KEY)");
+        }
+        for (String algorithm : new String[] {"Ed25519", "RSA"}) {
+            try {
+                return KeyFactory.getInstance(algorithm).generatePublic(new X509EncodedKeySpec(der));
+            } catch (GeneralSecurityException e) {
+                // try the next key type
+            }
+        }
+        throw new GatewayConfigException(JWT_PUBLIC_KEY + " is not an Ed25519 or RSA public key in X.509 PEM form");
     }
 
     private static Map<String, String> readFile(Path path) {

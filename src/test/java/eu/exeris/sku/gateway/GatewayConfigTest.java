@@ -17,8 +17,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DisplayName("GatewayConfig")
 class GatewayConfigTest {
 
-    private static final String SECRET = "0123456789abcdef0123456789abcdef";
-
     private static Map<String, String> env(String... kv) {
         Map<String, String> m = new HashMap<>();
         m.put("EXERIS_GATEWAY_ROUTES", "/api=http://backend:8080");
@@ -113,29 +111,106 @@ class GatewayConfigTest {
                 .hasMessageContaining("EXERIS_CB_SLIDING_WINDOW");
     }
 
-    @Test
-    @DisplayName("JWT enabled without a secret refuses to start and names the setting")
-    void jwtWithoutSecretIsRefused() {
-        assertThatThrownBy(() -> GatewayConfig.load(env("EXERIS_JWT_ENABLED", "true")))
-                .isInstanceOf(GatewayConfigException.class)
-                .hasMessageContaining("EXERIS_JWT_SECRET");
+    private static final EdDsaTokens TOKENS = new EdDsaTokens();
+
+    private static Map<String, String> jwtEnv(String... kv) {
+        Map<String, String> m = env("EXERIS_JWT_ENABLED", "true", "EXERIS_JWT_ISSUER", EdDsaTokens.ISSUER,
+                "EXERIS_JWT_AUDIENCE", EdDsaTokens.AUDIENCE);
+        for (int i = 0; i < kv.length; i += 2) {
+            m.put(kv[i], kv[i + 1]);
+        }
+        return m;
     }
 
     @Test
-    @DisplayName("A JWT secret shorter than an HMAC-SHA-256 key is refused")
-    void shortJwtSecretIsRefused() {
-        assertThatThrownBy(() -> GatewayConfig.load(env("EXERIS_JWT_ENABLED", "true", "EXERIS_JWT_SECRET", "short")))
+    @DisplayName("JWT enabled with no key source refuses to start and names both sources")
+    void jwtWithoutKeySourceIsRefused() {
+        assertThatThrownBy(() -> GatewayConfig.load(jwtEnv()))
                 .isInstanceOf(GatewayConfigException.class)
-                .hasMessageContaining("shorter than 32");
+                .hasMessageContaining("EXERIS_JWT_JWKS_URI")
+                .hasMessageContaining("EXERIS_JWT_PUBLIC_KEY");
     }
 
     @Test
-    @DisplayName("A configured JWT secret is accepted and never printed")
-    void jwtSecretIsRedacted() {
-        GatewayConfig c = GatewayConfig.load(env("EXERIS_JWT_ENABLED", "true", "EXERIS_JWT_SECRET", SECRET));
+    @DisplayName("JWT enabled with both a JWKS URI and a static key refuses to start")
+    void jwtWithBothKeySourcesIsRefused() {
+        assertThatThrownBy(() -> GatewayConfig.load(jwtEnv("EXERIS_JWT_JWKS_URI", "https://auth.example.com/jwks",
+                "EXERIS_JWT_PUBLIC_KEY", TOKENS.pem(), "EXERIS_JWT_KEY_ID", "k1")))
+                .isInstanceOf(GatewayConfigException.class)
+                .hasMessageContaining("both are set");
+    }
 
-        assertThat(c.jwt().secret()).isEqualTo(SECRET);
-        assertThat(c.toString()).doesNotContain(SECRET);
+    @Test
+    @DisplayName("JWT enabled without an issuer or without an audience refuses to start and names the setting")
+    void jwtWithoutIssuerOrAudienceIsRefused() {
+        Map<String, String> noIssuer = jwtEnv("EXERIS_JWT_JWKS_URI", "https://auth.example.com/jwks");
+        noIssuer.remove("EXERIS_JWT_ISSUER");
+        assertThatThrownBy(() -> GatewayConfig.load(noIssuer))
+                .isInstanceOf(GatewayConfigException.class).hasMessageContaining("EXERIS_JWT_ISSUER");
+        Map<String, String> noAudience = jwtEnv("EXERIS_JWT_JWKS_URI", "https://auth.example.com/jwks");
+        noAudience.remove("EXERIS_JWT_AUDIENCE");
+        assertThatThrownBy(() -> GatewayConfig.load(noAudience))
+                .isInstanceOf(GatewayConfigException.class).hasMessageContaining("EXERIS_JWT_AUDIENCE");
+    }
+
+    @Test
+    @DisplayName("A JWKS URI is https, or http on a loopback host, and nothing else")
+    void jwksUriSchemeRule() {
+        assertThat(GatewayConfig.load(jwtEnv("EXERIS_JWT_JWKS_URI", "https://auth.example.com/jwks")).jwt().jwksUri())
+                .isNotNull();
+        assertThat(GatewayConfig.load(jwtEnv("EXERIS_JWT_JWKS_URI", "http://127.0.0.1:9000/jwks")).jwt().jwksUri())
+                .isNotNull();
+        assertThat(GatewayConfig.load(jwtEnv("EXERIS_JWT_JWKS_URI", "http://localhost/jwks")).jwt().jwksUri())
+                .isNotNull();
+        for (String bad : new String[] {"http://auth.example.com/jwks", "ftp://127.0.0.1/jwks", "/jwks", "not a uri"}) {
+            assertThatThrownBy(() -> GatewayConfig.load(jwtEnv("EXERIS_JWT_JWKS_URI", bad)))
+                    .as(bad).isInstanceOf(GatewayConfigException.class).hasMessageContaining("EXERIS_JWT_JWKS_URI");
+        }
+    }
+
+    @Test
+    @DisplayName("A static key needs a key id, is read from a PEM value or file, and must be a public key")
+    void staticKey() throws Exception {
+        assertThatThrownBy(() -> GatewayConfig.load(jwtEnv("EXERIS_JWT_PUBLIC_KEY", TOKENS.pem())))
+                .isInstanceOf(GatewayConfigException.class).hasMessageContaining("EXERIS_JWT_KEY_ID");
+
+        GatewayConfig inline = GatewayConfig.load(jwtEnv("EXERIS_JWT_PUBLIC_KEY", TOKENS.pem(), "EXERIS_JWT_KEY_ID", "k1"));
+        assertThat(inline.jwt().publicKey()).isEqualTo(TOKENS.publicKey());
+        assertThat(inline.jwt().keyId()).isEqualTo("k1");
+        assertThat(inline.jwt().acceptRs256()).isFalse();
+
+        Path pem = Files.writeString(Files.createTempFile("jwt", ".pem"), TOKENS.pem());
+        GatewayConfig fromFile = GatewayConfig.load(jwtEnv("EXERIS_JWT_PUBLIC_KEY_FILE", pem.toString(),
+                "EXERIS_JWT_KEY_ID", "k1", "EXERIS_JWT_ACCEPT_RS256", "true"));
+        assertThat(fromFile.jwt().publicKey()).isEqualTo(TOKENS.publicKey());
+        assertThat(fromFile.jwt().acceptRs256()).isTrue();
+
+        assertThatThrownBy(() -> GatewayConfig.load(jwtEnv("EXERIS_JWT_PUBLIC_KEY", TOKENS.pem(),
+                "EXERIS_JWT_PUBLIC_KEY_FILE", pem.toString(), "EXERIS_JWT_KEY_ID", "k1")))
+                .isInstanceOf(GatewayConfigException.class).hasMessageContaining("both set");
+        assertThatThrownBy(() -> GatewayConfig.load(jwtEnv("EXERIS_JWT_PUBLIC_KEY", "garbage", "EXERIS_JWT_KEY_ID", "k1")))
+                .isInstanceOf(GatewayConfigException.class).hasMessageContaining("EXERIS_JWT_PUBLIC_KEY");
+        assertThatThrownBy(() -> GatewayConfig.load(jwtEnv("EXERIS_JWT_PUBLIC_KEY_FILE", "/nonexistent/key.pem",
+                "EXERIS_JWT_KEY_ID", "k1")))
+                .isInstanceOf(GatewayConfigException.class).hasMessageContaining("EXERIS_JWT_PUBLIC_KEY_FILE");
+    }
+
+    @Test
+    @DisplayName("The removed JWT settings refuse to start and name their replacement, with JWT on or off")
+    void removedJwtSettingsAreRefused() {
+        for (boolean enabled : new boolean[] {true, false}) {
+            Map<String, String> secret = env("EXERIS_JWT_ENABLED", String.valueOf(enabled), "EXERIS_JWT_SECRET", "x");
+            assertThatThrownBy(() -> GatewayConfig.load(secret))
+                    .isInstanceOf(GatewayConfigException.class)
+                    .hasMessageContaining("EXERIS_JWT_SECRET")
+                    .hasMessageContaining("EXERIS_JWT_JWKS_URI")
+                    .hasMessageContaining("EXERIS_JWT_PUBLIC_KEY");
+            Map<String, String> cache = env("EXERIS_JWT_ENABLED", String.valueOf(enabled), "EXERIS_JWT_CACHE_CAPACITY", "10");
+            assertThatThrownBy(() -> GatewayConfig.load(cache))
+                    .isInstanceOf(GatewayConfigException.class)
+                    .hasMessageContaining("EXERIS_JWT_CACHE_CAPACITY")
+                    .hasMessageContaining("no verification result is cached");
+        }
     }
 
     @Test

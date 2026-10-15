@@ -55,7 +55,8 @@ class PathMatchTest {
     @DisplayName("JWT admission leaves the health paths open, with or without a query, and nothing else")
     void jwtGate() {
         JwtGatewayPolicy policy = new JwtGatewayPolicy(JwtAdmissionPolicies.builder()
-                .secret("0123456789abcdef0123456789abcdef").expectedIssuer("https://auth.example.com").build(),
+                .publicKey(EdDsaTokens.KID, new EdDsaTokens().publicKey())
+                .expectedIssuer(EdDsaTokens.ISSUER).expectedAudience(EdDsaTokens.AUDIENCE).build(),
                 HEALTH, List.of());
         for (String path : List.of("/health", "/health?x=1", "/actuator/health", "/actuator/health?x=1")) {
             assertThat(policy.preRouting(TestExchange.get(path)).isShortCircuit()).as(path).isFalse();
@@ -102,5 +103,17 @@ class PathMatchTest {
         });
         assertThat(excluded[0]).isEqualTo(5_000 + 10_000);
         JfrAllocationMonitor.assertContract(config, result, "PathMatch.matchesAny");
+    }
+
+    @Test
+    @DisplayName("pathOf keeps the path part and returns a target without a query as it is")
+    void pathOfCutsQueryAndFragment() {
+        String plain = "/api/items";
+        assertThat(PathMatch.pathOf(plain)).isSameAs(plain);
+        assertThat(PathMatch.pathOf("/api/items?a=1")).isEqualTo("/api/items");
+        assertThat(PathMatch.pathOf("/api/items#f")).isEqualTo("/api/items");
+        assertThat(PathMatch.pathOf("/api/items?a=1#f")).isEqualTo("/api/items");
+        assertThat(PathMatch.pathOf("?a=1")).isEmpty();
+        assertThat(PathMatch.pathOf(null)).isNull();
     }
 }
