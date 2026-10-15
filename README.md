@@ -57,6 +57,8 @@ The kernel's HTTP/1.1 server has already read a request body when the gateway se
 | `EXERIS_RATELIMIT_ENABLED`, `_RPS`, `_BURST`, `_CAPACITY`, `_HEADERS` | token-bucket rate limit. It is one shared limit unless `EXERIS_RATELIMIT_KEY_HEADER` names a header. Use that only behind a trusted proxy that sets the header and replaces any client value, because the kernel does not tell a handler which address a request came from and a client chooses every header it sends |
 | `EXERIS_WAF_ENABLED`, `EXERIS_WAF_MODE` | `BLOCK` (default) or `DETECT`, which logs a match and lets the request through |
 | `EXERIS_JWT_ENABLED` | JWT admission, off by default. When on, the gateway verifies each token's signature and its `iss`, `aud`, `exp`, `nbf` and `sub`, and answers `401` otherwise. `/health` and `/actuator/health` are the only paths that skip admission. It refuses to start (exit 78) when the key source is missing or ambiguous, or when the issuer or the audience is missing |
+| `EXERIS_CIRCUIT_BREAKER_ENABLED`, `EXERIS_CB_SLIDING_WINDOW`, `_MIN_CALLS`, `_FAILURE_RATE`, `_WAIT_DURATION_SEC`, `_PERMITTED_HALF_OPEN` | one breaker per route. `_PERMITTED_HALF_OPEN` is 1 to 1024, and `_MIN_CALLS` may not exceed `_SLIDING_WINDOW`; a value outside that stops the gateway at start |
+| `EXERIS_OBSERVABILITY_ENABLED` | request metrics, W3C trace propagation and access recording |
 
 **JWT keys and claims.** The algorithm is EdDSA (Ed25519); the key source is how its keys reach the gateway. Set exactly one source:
 
@@ -72,8 +74,6 @@ The kernel's HTTP/1.1 server has already read a request body when the gateway se
 The JWKS is fetched by the `jwt-validation` capability, not by the gateway, with a deadline and a size cap of its own and without following redirects. The fetch is lazy and shared: the first request after start loads the keys, and a request reloads them when they are older than the capability's refresh interval or names an unknown `kid`, at most once per its minimum interval; a failed fetch keeps the previous keys. No verification result is cached, so every request verifies its token's signature.
 
 `EXERIS_JWT_SECRET` (HS256) and `EXERIS_JWT_CACHE_CAPACITY` no longer exist. The gateway refuses to start while either is set, with JWT on or off, and the message names the replacement.
-| `EXERIS_CIRCUIT_BREAKER_ENABLED`, `EXERIS_CB_SLIDING_WINDOW`, `_MIN_CALLS`, `_FAILURE_RATE`, `_WAIT_DURATION_SEC`, `_PERMITTED_HALF_OPEN` | one breaker per route. `_PERMITTED_HALF_OPEN` is 1 to 1024, and `_MIN_CALLS` may not exceed `_SLIDING_WINDOW`; a value outside that stops the gateway at start |
-| `EXERIS_OBSERVABILITY_ENABLED` | request metrics, W3C trace propagation and access recording |
 
 **Forwarding headers.** `Forwarded`, `X-Forwarded-*` and `X-Real-IP` sent by a client are not passed upstream, and neither are hop-by-hop headers or the headers a `Connection` header names. The gateway sets no `X-Forwarded-For` of its own: the kernel does not expose the peer address to a handler.
 
