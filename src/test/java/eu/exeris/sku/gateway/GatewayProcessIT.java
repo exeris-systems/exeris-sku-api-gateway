@@ -202,6 +202,20 @@ class GatewayProcessIT {
     }
 
     @Test
+    @DisplayName("A production environment with no licence manifest does not start")
+    void productionWithoutManifestDoesNotStart() throws Exception {
+        int ingress = freePort();
+        process = launch(Map.of(
+                "EXERIS_HTTP_BIND_HOST", "127.0.0.1",
+                "EXERIS_HTTP_PORT", String.valueOf(ingress),
+                "EXERIS_ENVIRONMENT", "production",
+                "EXERIS_GATEWAY_ROUTES", "/api=http://127.0.0.1:1"));
+
+        assertThat(process.waitFor(40, TimeUnit.SECONDS)).isTrue();
+        assertThat(process.exitValue()).isNotZero();
+    }
+
+    @Test
     @DisplayName("JWT enabled without a secret exits with the configuration status before the kernel starts")
     void jwtWithoutSecretDoesNotStart() throws Exception {
         process = launch(Map.of(
