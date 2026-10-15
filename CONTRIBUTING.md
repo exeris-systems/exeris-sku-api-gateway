@@ -15,7 +15,7 @@ Requires JDK 25 and Maven 3.9+. `README.md` explains how the upstreams are obtai
 ## What a change has to preserve
 
 - **Kernel-direct execution (ADR-006, ADR-024).** The data plane is Exeris-native: no Spring, servlet, Netty or reactive type anywhere.
-- **The composition manifest.** `composition.json` at the repository root is the authored manifest (ADR-053). A change to the set of composed capabilities updates it in the same commit, and it keeps passing the composition stamp check.
+- **The composition manifest.** `composition.json` at the repository root is the generated manifest (ADR-053), written by `CompositionManifestTest` and never hand-edited. A change to the set of composed capabilities regenerates it in the same commit (`-Dexeris.composition.regenerate=true`), and it keeps passing the composition stamp check.
 - **Substrate driver-swap transparency.** The manifest and the code are identical for the Community and Enterprise substrates; name kernel SPIs, never a concrete driver.
 - **The JDK baseline.** `maven.compiler.release` stays 25, and no preview flag appears anywhere.
 - **Tests.** JUnit 5 and AssertJ only, no mocking framework: test doubles are written by hand.
