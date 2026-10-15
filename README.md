@@ -8,28 +8,83 @@ Status: proof of concept, built against `exeris-kernel` 0.13.0-SNAPSHOT on JDK 2
 
 - **Layer:** Tier 3 — Platform SKU (Gateway family), in [`high-level-architecture.md`](https://github.com/exeris-systems/exeris-docs/blob/main/high-level-architecture.md) §3.3.
 - **Composes** nine Tier 2 capabilities: `gateway-core`, `cors-policy`, `rate-limiting`, `jwt-validation`, `request-routing`, `upstream-pool`, `circuit-breaker`, `gateway-observability` and `waf-rules`. Eight are `commercial`; `cors-policy` is `community`.
-- **Composition manifest:** `composition.json` at the repository root lists the nine modules and their `@Provides` services (ADR-053).
+- **Composition manifest:** `composition.json` at the repository root lists the nine modules and their `@Provides` services (ADR-053); it is generated, see below.
 - **Entitlement:** the SKU's entitlement id is `exeris-sku-api-gateway`, its artifactId (ADR-089).
 - **Wall (ADR-006):** the data plane is Exeris-native. No `org.springframework.*`, `jakarta.servlet.*`, `io.netty.*` or `reactor.*` type may appear.
 
 ## What the source contains
 
-- `GatewaySkuApplication` is the runnable entry point. It starts the kernel's HTTP server, creates `GatewayCoreModule`, registers the policies below on its `PolicyChain`, registers reverse-proxy handlers on its `IngressBootstrap`, and exposes `/actuator/health` and `/health` from the gateway lifecycle.
-- One adapter per composed capability implements `GatewayPolicy` and is registered on the chain: observability (outermost), CORS preflight, rate limiting, WAF, JWT admission, circuit breaker and request routing. Each adapter sits in its own package under `eu.exeris.sku.gateway`.
-- `HttpReverseProxyHandler` forwards a request to a configured upstream URI through the kernel's `HttpClientEngine`; `RoutingReverseProxyHandler` resolves the destination with the `RequestRouter`, rewrites the path and applies the route's header mutations.
-- The upstream URIs and the routing switches are read from environment variables.
-- Each adapter has an integration test that exercises it against the chain.
+- `GatewaySkuApplication` is the runnable entry point. It reads the configuration, starts the kernel's HTTP server, and hands the kernel the ingress that `GatewayRuntime` assembles from `GatewayCoreModule`, the enabled policies and the route table. A configuration it cannot use ends the process with status 78 before the kernel starts.
+- One adapter per composed capability implements `GatewayPolicy` and is registered on the chain, in this order: request size (-200), CORS (-100), rate limiting (-50), WAF (-45), JWT admission (-40) and request routing (-10). The circuit breaker and the observability measurement wrap the ingress instead of sitting in the chain, so a response a policy produces by refusing is counted and traced like any other. Each adapter sits in its own package under `eu.exeris.sku.gateway`.
+- `RoutingReverseProxyHandler` resolves the destination with the `RequestRouter`, rewrites the path, applies the route's header mutations and forwards through the kernel's `HttpClientEngine`. The destination always comes from the route table, never from the request.
+- `composition.json` is generated: `CompositionManifestTest` builds the capability graph from the composed capabilities' own metadata and fails if the committed file differs. After the composed set changes, regenerate it with `mvn test -Dtest=CompositionManifestTest -Dexeris.composition.regenerate=true`.
+- The tests drive each adapter against the chain, the assembled gateway with a stand-in upstream, and the real application in its own JVM (`GatewayProcessIT`).
+
+## Configuration
+
+Every setting is an environment variable. `EXERIS_GATEWAY_CONFIG` may name a properties file that uses the same names; an environment variable overrides the file, and an unknown name in the file is refused. A value that cannot be used stops the gateway at start and the message names the setting.
+
+**Routes are required; nothing is built in.** The gateway has no default route and no application-specific content.
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `EXERIS_GATEWAY_ROUTES` | `PREFIX=TARGET` entries separated by `;`. `TARGET` is `http://host[:port][/base]` or `cluster://name`. Append `,strip` to remove the prefix before forwarding. A prefix matches at a path-segment boundary. Example: `/api/users=http://users:8080;/legacy=http://old:9000,strip` | none, required |
+| `EXERIS_GATEWAY_CLUSTERS` | `NAME=URL,URL` entries separated by `;`, the endpoints a `cluster://name` route balances over | none |
+| `EXERIS_LB_ALGORITHM` | `ROUND_ROBIN`, `LEAST_CONNECTIONS` or `WEIGHTED_ROUND_ROBIN` | `ROUND_ROBIN` |
+| `EXERIS_FAILOVER_ENABLED` | retry a `GET`, `HEAD` or `OPTIONS` without a body on another cluster host after a 5xx | `true` |
+| `EXERIS_PASSIVE_HEALTH_CHECK_ENABLED`, `EXERIS_PASSIVE_CONSECUTIVE_ERRORS`, `EXERIS_PASSIVE_EJECTION_SEC` | eject a host after consecutive errors | `true`, `3`, `5` |
+| `EXERIS_HTTP_BIND_HOST`, `EXERIS_HTTP_PORT` (or `PORT`) | the ingress listener | `0.0.0.0`, `8080` |
+
+**Limits.**
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `EXERIS_HTTP_MAX_REQUEST_BODY_BYTES` | largest request body; a larger one is answered `413` and not forwarded | 10 MiB |
+| `EXERIS_HTTP_MAX_REQUEST_HEADER_COUNT`, `EXERIS_HTTP_MAX_REQUEST_HEADER_SIZE` | handed to the kernel's HTTP server | 100, 8192 |
+| `EXERIS_UPSTREAM_TIMEOUT_MS` | an upstream connection that moves no bytes for this long is reclaimed and the request is answered `502`. It is an idle limit, not a deadline on the whole exchange | 30000 |
+| `EXERIS_UPSTREAM_MAX_RESPONSE_BYTES` | largest upstream response accepted | 10 MiB |
+
+The kernel's HTTP/1.1 server has already read a request body when the gateway sees it, so the body limit bounds what is forwarded, not what is buffered.
+
+**Policies, all off unless enabled.**
+
+| Setting | Meaning |
+|---|---|
+| `EXERIS_CORS_ALLOWED_ORIGINS` | comma-separated origins. CORS is off while this is unset; `*` is served only if written |
+| `EXERIS_RATELIMIT_ENABLED`, `_RPS`, `_BURST`, `_CAPACITY`, `_HEADERS` | token-bucket rate limit. It is one shared limit unless `EXERIS_RATELIMIT_KEY_HEADER` names a header. Use that only behind a trusted proxy that sets the header and replaces any client value, because the kernel does not tell a handler which address a request came from and a client chooses every header it sends |
+| `EXERIS_WAF_ENABLED`, `EXERIS_WAF_MODE` | `BLOCK` (default) or `DETECT`, which logs a match and lets the request through |
+| `EXERIS_JWT_ENABLED`, `EXERIS_JWT_SECRET`, `_ISSUER`, `_AUDIENCE`, `_CACHE_CAPACITY` | HS256 admission. The gateway has no built-in secret: with JWT enabled and no secret, or one shorter than 32 bytes, it refuses to start. `/health` and `/actuator/health` are the only paths that skip admission |
+| `EXERIS_CIRCUIT_BREAKER_ENABLED`, `EXERIS_CB_SLIDING_WINDOW`, `_MIN_CALLS`, `_FAILURE_RATE`, `_WAIT_DURATION_SEC`, `_PERMITTED_HALF_OPEN` | one breaker per route |
+| `EXERIS_OBSERVABILITY_ENABLED` | request metrics, W3C trace propagation and access recording |
+
+**Forwarding headers.** `Forwarded`, `X-Forwarded-*` and `X-Real-IP` sent by a client are not passed upstream, and neither are hop-by-hop headers or the headers a `Connection` header names. The gateway sets no `X-Forwarded-For` of its own: the kernel does not expose the peer address to a handler.
+
+**Diagnostics: expose only on a trusted network.** `/health` and `/actuator/health` are served on the ingress. Every other diagnostic endpoint (`/metrics`, `/actuator/metrics`, `/actuator/allocations`, `/dashboard`, `/observability`) is served by one handler on a separate management listener, and by nothing else.
+
+| Setting | Meaning | Default |
+|---|---|---|
+| `EXERIS_MANAGEMENT_ENABLED` | start the management listener | `false` |
+| `EXERIS_MANAGEMENT_BIND_HOST` | address to bind. Anything but loopback is an explicit decision to expose process internals to that network | `127.0.0.1` |
+| `EXERIS_MANAGEMENT_PORT` | port; it must differ from the ingress port | `9090` |
+
+The metrics and dashboard endpoints exist only when `EXERIS_OBSERVABILITY_ENABLED` is also true. The management listener has no admission of its own, and its paths are never in the JWT bypass list because they are never on the ingress.
+
+**Licence.** The SKU and each composed commercial capability declare an entitlement requirement. The kernel reads the environment from `EXERIS_ENVIRONMENT`; in a production class it refuses to start unless `EXERIS_LICENSE_MANIFEST_PATH` (or a `license-manifest.json` in the working directory) names a signed manifest that lists `exeris-sku-api-gateway` and every composed commercial capability. `cors-policy` is community and needs no entry.
+
+**TLS is not provided**, in either direction. The gateway listens in plaintext and its upstream connections are plaintext, so an `https://` upstream is refused at start. Terminate TLS in front of it and keep the upstreams on a trusted network. The gateway sets no TLS property on the kernel.
+
+**JVM settings.** No workload-profiling pass has been run for this SKU, so the image bakes in no collector or heap size. It passes `--enable-native-access=ALL-UNNAMED` and appends `JAVA_OPTS`.
 
 ## Build & test
 
 Requires JDK 25 and Maven 3.9+.
 
 ```bash
-mvn test
-mvn package -DskipTests
+mvn verify
+mvn package -DskipTests && docker build -t exeris-sku-api-gateway .
 ```
 
-The upstreams are not on Maven Central. The nine `exeris-caps-*` modules above are built from source first, `exeris-sdk` is built from source, and `exeris-kernel` 0.13.0-SNAPSHOT is resolved from GitHub Packages, which needs a token with `read:packages`.
+The upstreams are not on Maven Central. The ten `exeris-caps-*` modules the build needs (the nine composed ones and `service-boundary-core`, which `gateway-core`'s build uses) and `exeris-sdk` are built from source and installed first, `exeris-tooling` supplies the codegen chain, and `exeris-kernel` 0.13.0-SNAPSHOT is resolved from GitHub Packages, which needs a token with `read:packages`. `.github/workflows/build.yml` shows the order. The Dockerfile packages the built jar rather than building inside the image for the same reason.
 
 ## Documentation
 

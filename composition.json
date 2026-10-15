@@ -1,0 +1,162 @@
+{
+  "schemaVersion" : 2,
+  "stamp" : {
+    "validated" : true,
+    "compositionVersion" : "0.1.0",
+    "contentBinding" : "sha256:69d7252b351afd0f540b903b700e76283b397a4d7e65d576c17bb78c7b968410"
+  },
+  "modules" : [
+    {
+      "name" : "CircuitBreakerModule",
+      "packageName" : "eu.exeris.caps.breaker",
+      "qualifiedName" : "eu.exeris.caps.breaker.CircuitBreakerModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.breaker.api.CircuitBreakerRegistry",
+            "version" : "0.1.0"
+          },
+          {
+            "service" : "eu.exeris.caps.breaker.api.CircuitBreakerAdmin",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "CorsPolicyModule",
+      "packageName" : "eu.exeris.caps.corspolicy",
+      "qualifiedName" : "eu.exeris.caps.corspolicy.CorsPolicyModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.corspolicy.api.CorsPolicy",
+            "version" : "1.0.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "GatewayCoreModule",
+      "packageName" : "eu.exeris.caps.gatewaycore",
+      "qualifiedName" : "eu.exeris.caps.gatewaycore.GatewayCoreModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.gatewaycore.api.GatewayLifecycle",
+            "version" : "0.1.0"
+          },
+          {
+            "service" : "eu.exeris.caps.gatewaycore.api.IngressBootstrap",
+            "version" : "0.1.0"
+          },
+          {
+            "service" : "eu.exeris.caps.gatewaycore.api.PolicyChain",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ],
+        "lifecycleOwner" : "eu.exeris.caps.gatewaycore.GatewayCoreModule"
+      }
+    },
+    {
+      "name" : "JwtValidationModule",
+      "packageName" : "eu.exeris.caps.jwt",
+      "qualifiedName" : "eu.exeris.caps.jwt.JwtValidationModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.jwt.api.JwtAdmissionPolicy",
+            "version" : "1.0.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "ObservabilityModule",
+      "packageName" : "eu.exeris.caps.observability",
+      "qualifiedName" : "eu.exeris.caps.observability.ObservabilityModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.observability.api.GatewayObservabilityService",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "UpstreamPoolModule",
+      "packageName" : "eu.exeris.caps.pool",
+      "qualifiedName" : "eu.exeris.caps.pool.UpstreamPoolModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.pool.api.UpstreamPoolService",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "RateLimitModule",
+      "packageName" : "eu.exeris.caps.ratelimit",
+      "qualifiedName" : "eu.exeris.caps.ratelimit.RateLimitModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.ratelimit.api.RateLimitPolicy",
+            "version" : "1.0.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "RequestRoutingModule",
+      "packageName" : "eu.exeris.caps.routing",
+      "qualifiedName" : "eu.exeris.caps.routing.RequestRoutingModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.routing.api.RequestRouter",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    },
+    {
+      "name" : "WafModule",
+      "packageName" : "eu.exeris.caps.waf",
+      "qualifiedName" : "eu.exeris.caps.waf.WafModule",
+      "module" : {
+        "provides" : [
+          {
+            "service" : "eu.exeris.caps.waf.api.WafPolicy",
+            "version" : "0.1.0"
+          }
+        ],
+        "requires" : [ ]
+      }
+    }
+  ],
+  "resolutions" : [ ],
+  "initOrder" : [
+    "eu.exeris.caps.breaker.CircuitBreakerModule",
+    "eu.exeris.caps.corspolicy.CorsPolicyModule",
+    "eu.exeris.caps.gatewaycore.GatewayCoreModule",
+    "eu.exeris.caps.jwt.JwtValidationModule",
+    "eu.exeris.caps.observability.ObservabilityModule",
+    "eu.exeris.caps.pool.UpstreamPoolModule",
+    "eu.exeris.caps.ratelimit.RateLimitModule",
+    "eu.exeris.caps.routing.RequestRoutingModule",
+    "eu.exeris.caps.waf.WafModule"
+  ],
+  "warnings" : [ ]
+}
