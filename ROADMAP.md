@@ -27,7 +27,8 @@ the kernel HTTP subsystem, instantiates `GatewayCoreModule`, registers per-cap p
 `CircuitBreakerGatewayPolicy`, `RoutingGatewayPolicy`, `ObservabilityGatewayPolicy`) and forwards through
 a zero-copy reverse proxy on the kernel client engine. It composes nine caps: `gateway-core`, `cors-policy`,
 `rate-limiting`, `jwt-validation`, `request-routing`, `upstream-pool`, `circuit-breaker`,
-`gateway-observability` and `waf-rules`. Nine test classes: one integration test per concern plus a smoke test.
+`gateway-observability` and `waf-rules`. 90 tests across 17 classes: one integration test per concern, the assembled gateway, configuration,
+licence enforcement, a smoke test and the real application in its own JVM (`GatewayProcessIT`).
 
 The import is on the local `feat/import-0.1.0` branch. It already: carries no application-specific routes
 and no benchmark handlers, in code or in the image (routes come from `EXERIS_GATEWAY_ROUTES`, which is
