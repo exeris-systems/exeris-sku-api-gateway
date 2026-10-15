@@ -56,6 +56,23 @@ public final class PathMatch {
         return false;
     }
 
+    /**
+     * The path part of a request target, for a consumer that takes a {@code String}.
+     *
+     * <p>A target without a query or fragment is returned as it is, so the common request allocates nothing;
+     * only a target that carries one is cut, because the consumer needs a string that ends at the path.
+     *
+     * @param target the request target; {@code null} is returned as {@code null}
+     * @return the part before the first {@code ?} or {@code #}
+     */
+    public static String pathOf(String target) {
+        if (target == null) {
+            return null;
+        }
+        int end = pathEnd(target);
+        return end == target.length() ? target : target.substring(0, end);
+    }
+
     private static int pathEnd(String target) {
         for (int i = 0, n = target.length(); i < n; i++) {
             char c = target.charAt(i);

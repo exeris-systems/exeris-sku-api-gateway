@@ -81,6 +81,17 @@ class ObservabilityIngressTest {
     }
 
     @Test
+    @DisplayName("A request is recorded under its path alone: a query or fragment the client adds is not a new metric key")
+    void recordsPathWithoutQueryOrFragment() {
+        for (String target : List.of("/api/items", "/api/items?a=1", "/api/items?a=2&b=3", "/api/items#frag", "/api/items?x=1#f")) {
+            measured.handle(new MockExchange(HttpMethod.GET, target, List.of()));
+        }
+
+        assertThat(obsService.snapshot().recentRequests()).hasSize(5)
+                .allSatisfy(entry -> assertThat(entry.path()).isEqualTo("/api/items"));
+    }
+
+    @Test
     @DisplayName("Preserves incoming traceparent trace ID and propagates downstream")
     void preservesIncomingTraceparent() {
         String incomingTrace = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";

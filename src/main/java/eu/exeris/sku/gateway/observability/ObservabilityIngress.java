@@ -25,6 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * is finished by the response it receives, and no state is kept between requests, so a request that is
  * refused early leaves nothing behind.
  *
+ * <p>A request is recorded under its path alone: the query and fragment are the client's to choose, so keeping
+ * them would let a client create as many distinct metric keys as it sends distinct queries.
+ *
  * <p>Virtual-thread safe and stateless per ADR-007: nothing is held in a {@code ThreadLocal}.
  */
 public final class ObservabilityIngress implements HttpHandler {
@@ -114,7 +117,7 @@ public final class ObservabilityIngress implements HttpHandler {
             observability.decrementActiveRequests();
             HttpRequest request = request();
             String method = request.method() != null ? request.method().name() : "GET";
-            observability.recordRequest(method, request.path(), statusCode,
+            observability.recordRequest(method, PathMatch.pathOf(request.path()), statusCode,
                     System.nanoTime() - startNanos, trace.traceId());
         }
 
