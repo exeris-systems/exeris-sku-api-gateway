@@ -22,10 +22,10 @@ Milestones are versions, not dates. Dates appear only on what has shipped; nothi
 ## Where this sits
 
 Tier 3 Platform SKU of the Gateway family (HLA §3.3; ADR-024, ADR-053). A runnable application that boots
-the kernel HTTP subsystem, instantiates `GatewayCoreModule`, registers per-cap policy adapters
-(`CorsGatewayPolicy`, `RateLimitGatewayPolicy`, `WafGatewayPolicy`, `JwtGatewayPolicy`,
-`CircuitBreakerGatewayPolicy`, `RoutingGatewayPolicy`, `ObservabilityGatewayPolicy`) and forwards through
-a zero-copy reverse proxy on the kernel client engine. It composes nine caps: `gateway-core`, `cors-policy`,
+the kernel HTTP subsystem, instantiates `GatewayCoreModule`, registers six policy adapters
+(`RequestSizeGatewayPolicy`, `CorsGatewayPolicy`, `RateLimitGatewayPolicy`, `WafGatewayPolicy`,
+`JwtGatewayPolicy`, `RoutingGatewayPolicy`), wraps the ingress with `CircuitBreakerIngress` and
+`ObservabilityIngress`, and forwards through a zero-copy reverse proxy on the kernel client engine. It composes nine caps: `gateway-core`, `cors-policy`,
 `rate-limiting`, `jwt-validation`, `request-routing`, `upstream-pool`, `circuit-breaker`,
 `gateway-observability` and `waf-rules`. 90 tests across 17 classes: one integration test per concern, the assembled gateway, configuration,
 licence enforcement, a smoke test and the real application in its own JVM (`GatewayProcessIT`).
@@ -93,7 +93,8 @@ Gaps between the inventory and the code, found in the code:
 - [ ] Cap dependency ranges moved to `[0.2.0,0.3.0)` for every cap whose binding replaces an SKU adapter
 - [ ] Per-client rate-limit keys and `X-Forwarded-For` use the peer address once the kernel exposes it (constraint above);
       the request-size limit stays documented as bounding what is forwarded, not memory
-- [ ] Remove the seven `*GatewayPolicy` adapters; policies bind to `RequestFilterChain` through each cap's binding
+- [ ] Remove the six `*GatewayPolicy` adapters, and decide what becomes of the `CircuitBreakerIngress` and
+      `ObservabilityIngress` wrappers; policies bind to `RequestFilterChain` through each cap's binding
 - [ ] Response-side behaviour (CORS headers, outcome recording, access logging, header mutation) follows the
       response-side ADR (entry condition: accepted before this milestone starts; see gateway-core 0.2.0)
 - [ ] Boot driven by the composition manifest rather than hand-constructed modules, once the SKU scaffold
