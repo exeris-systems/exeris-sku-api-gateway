@@ -1,5 +1,7 @@
 package eu.exeris.sku.gateway.config;
 
+import eu.exeris.caps.breaker.api.CircuitBreakerConfig;
+
 import java.io.IOException;
 import java.io.Reader;
 import java.net.URI;
@@ -75,6 +77,13 @@ public record GatewayConfig(
     static final String PASSIVE_HEALTH_CHECK_ENABLED = "EXERIS_PASSIVE_HEALTH_CHECK_ENABLED";
     static final String PASSIVE_CONSECUTIVE_ERRORS = "EXERIS_PASSIVE_CONSECUTIVE_ERRORS";
     static final String PASSIVE_EJECTION_SEC = "EXERIS_PASSIVE_EJECTION_SEC";
+    static final String PASSIVE_MAX_EJECTION_PERCENT = "EXERIS_PASSIVE_MAX_EJECTION_PERCENT";
+    static final String ACTIVE_HEALTH_CHECK_ENABLED = "EXERIS_ACTIVE_HEALTH_CHECK_ENABLED";
+    static final String ACTIVE_HEALTH_CHECK_PATH = "EXERIS_ACTIVE_HEALTH_CHECK_PATH";
+    static final String ACTIVE_HEALTH_CHECK_INTERVAL_MS = "EXERIS_ACTIVE_HEALTH_CHECK_INTERVAL_MS";
+    static final String ACTIVE_HEALTH_CHECK_TIMEOUT_MS = "EXERIS_ACTIVE_HEALTH_CHECK_TIMEOUT_MS";
+    static final String ACTIVE_HEALTHY_THRESHOLD = "EXERIS_ACTIVE_HEALTHY_THRESHOLD";
+    static final String ACTIVE_UNHEALTHY_THRESHOLD = "EXERIS_ACTIVE_UNHEALTHY_THRESHOLD";
     static final String MANAGEMENT_ENABLED = "EXERIS_MANAGEMENT_ENABLED";
     static final String MANAGEMENT_BIND_HOST = "EXERIS_MANAGEMENT_BIND_HOST";
     static final String MANAGEMENT_PORT = "EXERIS_MANAGEMENT_PORT";
@@ -105,6 +114,9 @@ public record GatewayConfig(
             HTTP_MAX_REQUEST_HEADER_COUNT, HTTP_MAX_REQUEST_HEADER_SIZE, UPSTREAM_TIMEOUT_MS,
             UPSTREAM_MAX_RESPONSE_BYTES, ROUTES, CLUSTERS, LB_ALGORITHM, FAILOVER_ENABLED,
             PASSIVE_HEALTH_CHECK_ENABLED, PASSIVE_CONSECUTIVE_ERRORS, PASSIVE_EJECTION_SEC,
+            PASSIVE_MAX_EJECTION_PERCENT, ACTIVE_HEALTH_CHECK_ENABLED, ACTIVE_HEALTH_CHECK_PATH,
+            ACTIVE_HEALTH_CHECK_INTERVAL_MS, ACTIVE_HEALTH_CHECK_TIMEOUT_MS, ACTIVE_HEALTHY_THRESHOLD,
+            ACTIVE_UNHEALTHY_THRESHOLD,
             MANAGEMENT_ENABLED, MANAGEMENT_BIND_HOST, MANAGEMENT_PORT, CORS_ALLOWED_ORIGINS, RATELIMIT_ENABLED, RATELIMIT_RPS, RATELIMIT_BURST,
             RATELIMIT_CAPACITY, RATELIMIT_HEADERS, RATELIMIT_KEY_HEADER, WAF_ENABLED, WAF_MODE, JWT_ENABLED,
             JWT_SECRET, JWT_ISSUER, JWT_AUDIENCE, JWT_CACHE_CAPACITY, CB_ENABLED, CB_SLIDING_WINDOW,
@@ -182,14 +194,32 @@ public record GatewayConfig(
     /**
      * Upstream pool behaviour.
      *
-     * @param algorithm                {@code ROUND_ROBIN}, {@code LEAST_CONNECTIONS} or {@code WEIGHTED_ROUND_ROBIN}
+     * @param algorithm                {@code ROUND_ROBIN}, {@code LEAST_CONNECTIONS}, {@code WEIGHTED_ROUND_ROBIN},
+     *                                 {@code RANDOM} or {@code IP_HASH}
      * @param failover                 whether a safe, bodyless request is retried on another host after a 5xx
      * @param passiveHealthCheck       whether a host is ejected after consecutive errors
      * @param consecutiveErrors        errors that eject a host
      * @param ejectionSeconds          how long an ejected host stays out
+     * @param maxEjectionPercent       the share of a cluster's hosts that may be ejected at once, 1 to 100; at
+     *                                 least one host always stays in rotation
+     * @param activeHealthCheck        the background probe, or {@code null} when it is off
      */
     public record Pool(String algorithm, boolean failover, boolean passiveHealthCheck,
-                       int consecutiveErrors, int ejectionSeconds) {
+                       int consecutiveErrors, int ejectionSeconds, int maxEjectionPercent,
+                       ActiveHealthCheck activeHealthCheck) {
+    }
+
+    /**
+     * Active health checking: a background probe of every host of a cluster.
+     *
+     * @param path                the absolute path probed on each host
+     * @param intervalMillis      time between probe rounds
+     * @param timeoutMillis       time a probe may take before it counts as failed
+     * @param healthyThreshold    consecutive successful probes that return an ejected host
+     * @param unhealthyThreshold  consecutive failed probes that eject a host
+     */
+    public record ActiveHealthCheck(String path, long intervalMillis, long timeoutMillis,
+                                    int healthyThreshold, int unhealthyThreshold) {
     }
 
     /**
@@ -319,7 +349,9 @@ public record GatewayConfig(
                 in.bool(FAILOVER_ENABLED, true),
                 in.bool(PASSIVE_HEALTH_CHECK_ENABLED, true),
                 in.integer(PASSIVE_CONSECUTIVE_ERRORS, 3, 1, 1_000),
-                in.integer(PASSIVE_EJECTION_SEC, 5, 1, 86_400));
+                in.integer(PASSIVE_EJECTION_SEC, 5, 1, 86_400),
+                in.integer(PASSIVE_MAX_EJECTION_PERCENT, 100, 1, 100),
+                activeHealthCheck(in));
 
         List<String> corsOrigins = parseOrigins(in.string(CORS_ALLOWED_ORIGINS, ""));
 
@@ -366,12 +398,19 @@ public record GatewayConfig(
 
         CircuitBreaker circuitBreaker = null;
         if (in.bool(CB_ENABLED, false)) {
+            int window = in.integer(CB_SLIDING_WINDOW, 20, 1, 1_000_000);
+            int minCalls = in.integer(CB_MIN_CALLS, 5, 1, 1_000_000);
+            if (minCalls > window) {
+                throw new GatewayConfigException(CB_MIN_CALLS + " (" + minCalls + ") must not exceed "
+                        + CB_SLIDING_WINDOW + " (" + window + ")");
+            }
             circuitBreaker = new CircuitBreaker(
-                    in.integer(CB_SLIDING_WINDOW, 20, 1, 1_000_000),
-                    in.integer(CB_MIN_CALLS, 5, 1, 1_000_000),
+                    window,
+                    minCalls,
                     (float) in.decimal(CB_FAILURE_RATE, 50.0, 0.0, 100.0),
                     in.integer(CB_WAIT_DURATION_SEC, 3, 1, 86_400),
-                    in.integer(CB_PERMITTED_HALF_OPEN, 3, 1, 1_000));
+                    in.integer(CB_PERMITTED_HALF_OPEN, 3, 1,
+                            CircuitBreakerConfig.MAX_PERMITTED_CALLS_IN_HALF_OPEN_STATE));
         }
 
         Management management = null;
@@ -530,9 +569,31 @@ public record GatewayConfig(
             case "ROUND_ROBIN" -> "ROUND_ROBIN";
             case "LEAST_CONN", "LEAST_CONNECTIONS" -> "LEAST_CONNECTIONS";
             case "WEIGHTED", "WEIGHTED_ROUND_ROBIN" -> "WEIGHTED_ROUND_ROBIN";
-            default -> throw new GatewayConfigException(LB_ALGORITHM + " must be ROUND_ROBIN, LEAST_CONNECTIONS or "
-                    + "WEIGHTED_ROUND_ROBIN, not '" + value + "'");
+            case "RANDOM" -> "RANDOM";
+            case "IP_HASH" -> "IP_HASH";
+            default -> throw new GatewayConfigException(LB_ALGORITHM + " must be ROUND_ROBIN, LEAST_CONNECTIONS, "
+                    + "WEIGHTED_ROUND_ROBIN, RANDOM or IP_HASH, not '" + value + "'");
         };
+    }
+
+    private static ActiveHealthCheck activeHealthCheck(Source in) {
+        if (!in.bool(ACTIVE_HEALTH_CHECK_ENABLED, false)) {
+            return null;
+        }
+        String path = in.string(ACTIVE_HEALTH_CHECK_PATH, "/health");
+        boolean originForm = !path.isEmpty() && path.charAt(0) == '/' && !path.startsWith("//")
+                && path.chars().allMatch(c -> c > 0x20 && c != 0x7f && c != '#' && c != '?' && c != '\\'
+                && c != '@');
+        if (!originForm) {
+            throw new GatewayConfigException(ACTIVE_HEALTH_CHECK_PATH
+                    + " must be an absolute path such as /health, without authority, query or fragment, not '"
+                    + path + "'");
+        }
+        return new ActiveHealthCheck(path,
+                in.longValue(ACTIVE_HEALTH_CHECK_INTERVAL_MS, 1_000, 1, 3_600_000),
+                in.longValue(ACTIVE_HEALTH_CHECK_TIMEOUT_MS, 500, 1, 600_000),
+                in.integer(ACTIVE_HEALTHY_THRESHOLD, 2, 1, 1_000),
+                in.integer(ACTIVE_UNHEALTHY_THRESHOLD, 3, 1, 1_000));
     }
 
     private static List<String> parseOrigins(String spec) {

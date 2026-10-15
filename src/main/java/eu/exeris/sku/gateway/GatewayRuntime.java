@@ -12,6 +12,7 @@ import eu.exeris.caps.jwt.api.JwtAdmissionPolicies;
 import eu.exeris.caps.jwt.api.JwtAdmissionPolicy;
 import eu.exeris.caps.observability.api.GatewayObservabilities;
 import eu.exeris.caps.observability.api.GatewayObservabilityService;
+import eu.exeris.caps.pool.api.ActiveHealthCheckConfig;
 import eu.exeris.caps.pool.api.LoadBalancingAlgorithm;
 import eu.exeris.caps.pool.api.PassiveHealthCheckConfig;
 import eu.exeris.caps.pool.api.UpstreamCluster;
@@ -199,12 +200,19 @@ public final class GatewayRuntime implements AutoCloseable {
         GatewayConfig.Pool pool = config.pool();
         LoadBalancingAlgorithm algorithm = LoadBalancingAlgorithm.valueOf(pool.algorithm());
         PassiveHealthCheckConfig passive = pool.passiveHealthCheck()
-                ? PassiveHealthCheckConfig.of(pool.consecutiveErrors(), Duration.ofSeconds(pool.ejectionSeconds()))
+                ? PassiveHealthCheckConfig.of(pool.consecutiveErrors(), Duration.ofSeconds(pool.ejectionSeconds()),
+                        pool.maxEjectionPercent())
                 : PassiveHealthCheckConfig.DISABLED;
+        GatewayConfig.ActiveHealthCheck probe = pool.activeHealthCheck();
+        ActiveHealthCheckConfig active = probe == null
+                ? ActiveHealthCheckConfig.DISABLED
+                : new ActiveHealthCheckConfig(true, probe.intervalMillis(), probe.timeoutMillis(), probe.path(),
+                        probe.healthyThreshold(), probe.unhealthyThreshold());
         for (GatewayConfig.Cluster cluster : config.clusters()) {
             UpstreamPools.ClusterBuilder builder = UpstreamPools.cluster(cluster.name())
                     .algorithm(algorithm)
-                    .passiveHealthCheck(passive);
+                    .passiveHealthCheck(passive)
+                    .activeHealthCheck(active);
             for (String endpoint : cluster.endpoints()) {
                 builder.addEndpoint(endpoint);
             }
@@ -254,7 +262,9 @@ public final class GatewayRuntime implements AutoCloseable {
                 router, clientEngine, poolService, config.pool().failover(), config.jwt() != null));
     }
 
-    /** Releases the pool, the breakers and the observability service. */
+    /**
+     * Releases the pool, which stops the clusters' health probes, the breakers and the observability service.
+     */
     @Override
     public void close() {
         List<AutoCloseable> closeables = new ArrayList<>();

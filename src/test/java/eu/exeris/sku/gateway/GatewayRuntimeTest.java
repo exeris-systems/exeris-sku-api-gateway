@@ -208,6 +208,75 @@ class GatewayRuntimeTest {
     }
 
     @Test
+    @DisplayName("IP_HASH selects without a key, so it rotates over the hosts until the kernel exposes the peer address")
+    void ipHashRotatesWithoutAKey() throws Exception {
+        start("EXERIS_GATEWAY_ROUTES", "/api=cluster://pool",
+                "EXERIS_GATEWAY_CLUSTERS", "pool=http://a:1,http://b:2",
+                "EXERIS_LB_ALGORITHM", "IP_HASH");
+
+        for (int i = 0; i < 4; i++) {
+            assertThat(send("/api/x").status()).isEqualTo(200);
+        }
+        assertThat(engine.requests).extracting(r -> r.authority())
+                .containsExactlyInAnyOrder("a:1", "a:1", "b:2", "b:2");
+    }
+
+    @Test
+    @DisplayName("RANDOM spreads requests over the hosts of a cluster")
+    void randomSelectsAmongTheHosts() throws Exception {
+        start("EXERIS_GATEWAY_ROUTES", "/api=cluster://pool",
+                "EXERIS_GATEWAY_CLUSTERS", "pool=http://a:1,http://b:2",
+                "EXERIS_LB_ALGORITHM", "RANDOM");
+
+        for (int i = 0; i < 200; i++) {
+            assertThat(send("/api/x").status()).isEqualTo(200);
+        }
+        assertThat(engine.requests).extracting(r -> r.authority()).contains("a:1", "b:2")
+                .allMatch(a -> a.equals("a:1") || a.equals("b:2"));
+    }
+
+    @Test
+    @DisplayName("Active health checking takes a host that fails its probe out of rotation")
+    void activeHealthCheckEjectsAFailingHost() throws Exception {
+        com.sun.net.httpserver.HttpServer live = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress(java.net.InetAddress.getLoopbackAddress(), 0), 0);
+        live.createContext("/health", x -> {
+            x.sendResponseHeaders(200, -1);
+            x.close();
+        });
+        live.start();
+        int dead;
+        try (java.net.ServerSocket probe = new java.net.ServerSocket(0, 0, java.net.InetAddress.getLoopbackAddress())) {
+            dead = probe.getLocalPort();
+        }
+        try {
+            String liveAuthority = "127.0.0.1:" + live.getAddress().getPort();
+            start("EXERIS_GATEWAY_ROUTES", "/api=cluster://pool",
+                    "EXERIS_GATEWAY_CLUSTERS", "pool=http://" + liveAuthority + ",http://127.0.0.1:" + dead,
+                    "EXERIS_ACTIVE_HEALTH_CHECK_ENABLED", "true",
+                    "EXERIS_ACTIVE_HEALTH_CHECK_INTERVAL_MS", "50",
+                    "EXERIS_ACTIVE_HEALTH_CHECK_TIMEOUT_MS", "200",
+                    "EXERIS_ACTIVE_UNHEALTHY_THRESHOLD", "1");
+
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            boolean onlyLive = false;
+            while (!onlyLive && System.nanoTime() < deadline) {
+                engine.requests.clear();
+                for (int i = 0; i < 6; i++) {
+                    send("/api/x");
+                }
+                onlyLive = engine.requests.stream().allMatch(r -> r.authority().equals(liveAuthority));
+                if (!onlyLive) {
+                    Thread.sleep(50);
+                }
+            }
+            assertThat(onlyLive).as("every request reaches the host that answers its probe").isTrue();
+        } finally {
+            live.stop(0);
+        }
+    }
+
+    @Test
     @DisplayName("The gateway reports DOWN before it is ready")
     void healthReflectsLifecycle() throws Exception {
         Map<String, String> env = Map.of("EXERIS_GATEWAY_ROUTES", "/api=http://backend:8080");

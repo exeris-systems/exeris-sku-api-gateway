@@ -44,6 +44,76 @@ class GatewayConfigTest {
     }
 
     @Test
+    @DisplayName("RANDOM and IP_HASH are accepted; the pool defaults leave the ejection budget open and probing off")
+    void poolAlgorithmsAndDefaults() {
+        assertThat(GatewayConfig.load(env("EXERIS_LB_ALGORITHM", "random")).pool().algorithm()).isEqualTo("RANDOM");
+        assertThat(GatewayConfig.load(env("EXERIS_LB_ALGORITHM", "IP_HASH")).pool().algorithm()).isEqualTo("IP_HASH");
+        GatewayConfig.Pool defaults = GatewayConfig.load(env()).pool();
+        assertThat(defaults.maxEjectionPercent()).isEqualTo(100);
+        assertThat(defaults.activeHealthCheck()).isNull();
+        assertThatThrownBy(() -> GatewayConfig.load(env("EXERIS_LB_ALGORITHM", "MAGLEV")))
+                .isInstanceOf(GatewayConfigException.class)
+                .hasMessageContaining("EXERIS_LB_ALGORITHM");
+    }
+
+    @Test
+    @DisplayName("The ejection budget is bounded to 1..100 and names its setting")
+    void maxEjectionPercentIsBounded() {
+        assertThat(GatewayConfig.load(env("EXERIS_PASSIVE_MAX_EJECTION_PERCENT", "50")).pool().maxEjectionPercent())
+                .isEqualTo(50);
+        for (String bad : new String[] {"0", "101"}) {
+            assertThatThrownBy(() -> GatewayConfig.load(env("EXERIS_PASSIVE_MAX_EJECTION_PERCENT", bad)))
+                    .isInstanceOf(GatewayConfigException.class)
+                    .hasMessageContaining("EXERIS_PASSIVE_MAX_EJECTION_PERCENT");
+        }
+    }
+
+    @Test
+    @DisplayName("Active health checking is read when enabled and refuses a path that could change the host")
+    void activeHealthCheck() {
+        GatewayConfig.ActiveHealthCheck probe = GatewayConfig.load(env(
+                "EXERIS_ACTIVE_HEALTH_CHECK_ENABLED", "true",
+                "EXERIS_ACTIVE_HEALTH_CHECK_PATH", "/ready",
+                "EXERIS_ACTIVE_HEALTH_CHECK_INTERVAL_MS", "250",
+                "EXERIS_ACTIVE_HEALTH_CHECK_TIMEOUT_MS", "100",
+                "EXERIS_ACTIVE_HEALTHY_THRESHOLD", "4",
+                "EXERIS_ACTIVE_UNHEALTHY_THRESHOLD", "5")).pool().activeHealthCheck();
+        assertThat(probe).isEqualTo(new GatewayConfig.ActiveHealthCheck("/ready", 250, 100, 4, 5));
+        assertThat(GatewayConfig.load(env("EXERIS_ACTIVE_HEALTH_CHECK_ENABLED", "true"))
+                .pool().activeHealthCheck().path()).isEqualTo("/health");
+
+        for (String bad : new String[] {"ready", "//evil.example/x", "/a?b=c", "/a@b"}) {
+            assertThatThrownBy(() -> GatewayConfig.load(env(
+                    "EXERIS_ACTIVE_HEALTH_CHECK_ENABLED", "true", "EXERIS_ACTIVE_HEALTH_CHECK_PATH", bad)))
+                    .as(bad)
+                    .isInstanceOf(GatewayConfigException.class)
+                    .hasMessageContaining("EXERIS_ACTIVE_HEALTH_CHECK_PATH");
+        }
+    }
+
+    @Test
+    @DisplayName("Half-open permits above what the breaker can track are refused at load, naming the setting")
+    void halfOpenPermitsAreBoundedByTheBreaker() {
+        assertThat(GatewayConfig.load(env("EXERIS_CIRCUIT_BREAKER_ENABLED", "true",
+                "EXERIS_CB_PERMITTED_HALF_OPEN", "1024")).circuitBreaker().halfOpenPermits()).isEqualTo(1024);
+        assertThatThrownBy(() -> GatewayConfig.load(env("EXERIS_CIRCUIT_BREAKER_ENABLED", "true",
+                "EXERIS_CB_PERMITTED_HALF_OPEN", "1025")))
+                .isInstanceOf(GatewayConfigException.class)
+                .hasMessageContaining("EXERIS_CB_PERMITTED_HALF_OPEN")
+                .hasMessageContaining("1024");
+    }
+
+    @Test
+    @DisplayName("A minimum call count above the sliding window is refused at load, naming both settings")
+    void minimumCallsMustFitTheWindow() {
+        assertThatThrownBy(() -> GatewayConfig.load(env("EXERIS_CIRCUIT_BREAKER_ENABLED", "true",
+                "EXERIS_CB_SLIDING_WINDOW", "10", "EXERIS_CB_MIN_CALLS", "11")))
+                .isInstanceOf(GatewayConfigException.class)
+                .hasMessageContaining("EXERIS_CB_MIN_CALLS")
+                .hasMessageContaining("EXERIS_CB_SLIDING_WINDOW");
+    }
+
+    @Test
     @DisplayName("JWT enabled without a secret refuses to start and names the setting")
     void jwtWithoutSecretIsRefused() {
         assertThatThrownBy(() -> GatewayConfig.load(env("EXERIS_JWT_ENABLED", "true")))
