@@ -1,6 +1,5 @@
 package eu.exeris.sku.gateway;
 
-import eu.exeris.caps.corspolicy.api.CorsPolicies;
 import eu.exeris.caps.corspolicy.api.CorsPolicy;
 import eu.exeris.caps.gatewaycore.GatewayCoreModule;
 import eu.exeris.caps.gatewaycore.api.GatewayLifecycle;
@@ -43,7 +42,7 @@ class CorsGatewayPolicyIntegrationTest {
         lifecycle = gatewayModule.gatewayLifecycle();
         policyChain = gatewayModule.policyChain();
 
-        CorsPolicy corsPolicy = CorsPolicies.forOrigins("https://app.example.com", "http://localhost:3000");
+        CorsPolicy corsPolicy = GatewayRuntime.corsPolicy(List.of("https://app.example.com", "http://localhost:3000"));
         policyChain.addPolicy(new CorsGatewayPolicy(corsPolicy));
 
         upstreamHandlerCalled = new AtomicBoolean(false);

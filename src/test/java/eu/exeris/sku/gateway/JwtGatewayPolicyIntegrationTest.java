@@ -1,6 +1,5 @@
 package eu.exeris.sku.gateway;
 
-import eu.exeris.caps.corspolicy.api.CorsPolicies;
 import eu.exeris.caps.corspolicy.api.CorsPolicy;
 import eu.exeris.caps.gatewaycore.GatewayCoreModule;
 import eu.exeris.caps.gatewaycore.api.GatewayLifecycle;
@@ -57,7 +56,7 @@ class JwtGatewayPolicyIntegrationTest {
         policyChain = gatewayModule.policyChain();
 
         // 1. CORS Policy (-100)
-        CorsPolicy corsPolicy = CorsPolicies.forOrigins("https://app.example.com");
+        CorsPolicy corsPolicy = GatewayRuntime.corsPolicy(List.of("https://app.example.com"));
         policyChain.addPolicy(new CorsGatewayPolicy(corsPolicy));
 
         // 2. Rate Limit Policy (-50)

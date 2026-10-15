@@ -1,6 +1,5 @@
 package eu.exeris.sku.gateway;
 
-import eu.exeris.caps.corspolicy.api.CorsPolicies;
 import eu.exeris.caps.corspolicy.api.CorsPolicy;
 import eu.exeris.caps.gatewaycore.GatewayCoreModule;
 import eu.exeris.caps.gatewaycore.api.GatewayLifecycle;
@@ -50,7 +49,7 @@ class RateLimitGatewayPolicyIntegrationTest {
         policyChain = gatewayModule.policyChain();
 
         // 1. CORS Policy
-        CorsPolicy corsPolicy = CorsPolicies.forOrigins("https://app.example.com");
+        CorsPolicy corsPolicy = GatewayRuntime.corsPolicy(List.of("https://app.example.com"));
         policyChain.addPolicy(new CorsGatewayPolicy(corsPolicy));
 
         // 2. Rate Limit Policy: 10 req/s, burst = 2

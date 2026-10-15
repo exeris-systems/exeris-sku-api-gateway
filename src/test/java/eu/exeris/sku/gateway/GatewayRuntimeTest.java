@@ -134,6 +134,24 @@ class GatewayRuntimeTest {
     }
 
     @Test
+    @DisplayName("An explicit origin is allowed with credentials")
+    void corsExplicitOriginWithCredentials() throws Exception {
+        start("EXERIS_CORS_ALLOWED_ORIGINS", "https://app.example.com");
+        TestExchange explicit = send("/api/x", new HttpHeader("Origin", "https://app.example.com"));
+        assertThat(explicit.hasHeader("Access-Control-Allow-Credentials")).isTrue();
+    }
+
+    @Test
+    @DisplayName("A wildcard origin is served only when written, and without credentials")
+    void corsWildcardWithoutCredentials() throws Exception {
+        start("EXERIS_CORS_ALLOWED_ORIGINS", "*");
+        TestExchange wildcard = send("/api/x", new HttpHeader("Origin", "https://anywhere.example"));
+        assertThat(wildcard.status()).isEqualTo(200);
+        assertThat(wildcard.hasHeader("Access-Control-Allow-Origin")).isTrue();
+        assertThat(wildcard.hasHeader("Access-Control-Allow-Credentials")).isFalse();
+    }
+
+    @Test
     @DisplayName("With JWT on, a request without a valid token is refused and a valid one is forwarded")
     void jwtAdmission() throws Exception {
         start("EXERIS_JWT_ENABLED", "true", "EXERIS_JWT_SECRET", SECRET);

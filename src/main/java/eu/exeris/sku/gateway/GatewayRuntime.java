@@ -173,12 +173,16 @@ public final class GatewayRuntime implements AutoCloseable {
                 ingress, management);
     }
 
-    private static CorsPolicy corsPolicy(List<String> origins) {
-        // A wildcard is served only when the operator wrote it
+    static CorsPolicy corsPolicy(List<String> origins) {
+        CorsPolicies.Builder builder = CorsPolicies.builder()
+                .methods(List.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"))
+                .headers(List.of("Content-Type", "Authorization"))
+                .maxAge(Duration.ofMinutes(10));
+        // A wildcard is served only when the operator wrote it, and never together with credentials
         if (origins.size() == 1 && origins.get(0).equals("*")) {
-            return CorsPolicies.permissive();
+            return builder.allowAnyOrigin().build();
         }
-        return CorsPolicies.forOrigins(origins.toArray(String[]::new));
+        return builder.allowOrigins(origins).allowCredentials(true).build();
     }
 
     private static RequestRouter buildRouter(List<GatewayConfig.Route> routes) {
