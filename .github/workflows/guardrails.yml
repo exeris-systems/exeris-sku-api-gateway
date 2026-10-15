@@ -37,7 +37,7 @@ concurrency:
 # A called workflow can only NARROW what the caller grants, never raise it, so this block is the
 # union of what every called workflow declares — not a wish list and not a minimum. Omitting a
 # permission one of them declares does not run that job with less; it makes the whole file an
-# invalid workflow. `id-token: write` and `issues: read` are docs-review's: the OIDC exchange
+# invalid workflow. `id-token: write` and `issues: read` are review's: the OIDC exchange
 # claude-code-action performs, and the debt issues that issue-conventions.md rule 6 says a review
 # finding becomes. `actions: read` is judge's: the commit a review read is the reviewing run's own
 # `head_sha`, which the platform states on the Actions API.
@@ -82,12 +82,12 @@ jobs:
   # THE REVIEW RUNS ON READINESS, not on every push: when the pull request is opened, marked ready
   # for review, or labelled `needs-review` by a person. A push afterwards leaves the standing
   # verdict covering an older commit, and the check says so until a review is asked for again.
-  docs-review:
+  review:
     needs: [docs, commits, pr-body]
     if: ${{ always() && github.event.action != 'closed' }}
-    uses: exeris-systems/.github/.github/workflows/docs-review.yml@main
+    uses: exeris-systems/.github/.github/workflows/review.yml@main
     with:
-      # `docs-review / publish / verdict` is the check this adds, red when the verdict is BLOCKED,
+      # `review / verdict` is the check this adds, red when the verdict is BLOCKED,
       # absent, invalid, or resting on a mandatory gate that did not run. Making it a required
       # context is a branch-protection change, not a change to this file.
       publish: true
