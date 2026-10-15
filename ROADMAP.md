@@ -1,3 +1,12 @@
+---
+title: "exeris-sku-api-gateway — Roadmap"
+type: roadmap
+visibility: public
+owning-repo: exeris-sku-api-gateway
+status: active
+last-verified: 2026-10-15
+---
+
 # exeris-sku-api-gateway — Roadmap
 
 Status: **poc**. Version line: **0.1.x**. Licence: Exeris Commercial License (ADR-023), entitlement id
