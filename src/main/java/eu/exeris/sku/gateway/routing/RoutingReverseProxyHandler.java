@@ -7,6 +7,7 @@ import eu.exeris.caps.routing.api.HeaderEntry;
 import eu.exeris.caps.routing.api.RequestRouter;
 import eu.exeris.caps.routing.api.Route;
 import eu.exeris.caps.routing.api.RouteLookup;
+import eu.exeris.caps.routing.api.RouteMatch;
 import eu.exeris.kernel.spi.http.HttpClientEngine;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
@@ -35,8 +36,9 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Uses {@link RequestRouter} (radix tree) to resolve the destination upstream, rewrites the path and
  * applies the route's header mutations. The destination always comes from the route table, never from the
- * request. The route is matched into a {@link RouteLookup} that each thread keeps and reuses; the lookup is
- * read only within one call of {@link #handle(HttpExchange)} and is never handed on.
+ * request. The route is matched into a {@link RouteLookup} borrowed from a {@link RouteLookupPool} for the
+ * match alone: the route and the rewritten path are copied out of it and it is given back before the request
+ * is built, so no lookup is held while the upstream is called.
  *
  * <p>Headers that describe the client connection or the client's own origin are not forwarded: hop-by-hop
  * headers, any header the {@code Connection} header names, and {@code Forwarded}, {@code X-Forwarded-*} and
@@ -67,8 +69,8 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
     private final boolean failoverEnabled;
     private final boolean claimsVerified;
     private final ConcurrentHashMap<String, TargetInfo> targetCache = new ConcurrentHashMap<>();
-    /** One lookup per thread: a lookup is not thread-safe, and {@link #handle} matches once and finishes with it. */
-    private final ThreadLocal<RouteLookup> lookups;
+    /** A lookup is not thread-safe: {@link #handle} holds one for the match and gives it back before the upstream call. */
+    private final RouteLookupPool lookups;
 
     public RoutingReverseProxyHandler(RequestRouter router) {
         this(router, null, null, false, false);
@@ -97,7 +99,7 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
         this.poolService = poolService;
         this.failoverEnabled = failoverEnabled;
         this.claimsVerified = claimsVerified;
-        this.lookups = ThreadLocal.withInitial(router::newLookup);
+        this.lookups = new RouteLookupPool(router);
     }
 
     private HttpClientEngine engine() {
@@ -135,12 +137,23 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
             String method = clientReq.method() != null ? clientReq.method().name() : null;
             String originalPath = clientReq.path();
 
-            RouteLookup lookup = lookups.get();
-            if (!router.match(method, originalPath, lookup)) {
+            Route route = null;
+            String rewrittenPath = null;
+            RouteLookup lookup = lookups.acquire();
+            try {
+                if (router.match(method, originalPath, lookup)) {
+                    route = lookup.route();
+                    // Built once: the failover below reuses it, and nothing reads the lookup again
+                    rewrittenPath = lookup.rewrittenPath();
+                }
+            } finally {
+                lookups.release(lookup);
+            }
+            if (route == null) {
                 exchange.respond(HttpStatus.NOT_FOUND);
                 return;
             }
-            Route route = lookup.route();
+            RouteMatch match = RouteMatch.matched(route, rewrittenPath, Map.of());
             routeId = route.id();
 
             String targetUri = route.targetUri();
@@ -164,8 +177,6 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
 
             try {
                 TargetInfo target = resolveTarget(targetUri);
-                // Built once: the failover below reuses it, and the lookup is not read for it again
-                String rewrittenPath = lookup.rewrittenPath();
                 String forwardedPath = rewrittenPath;
                 if (!target.basePath.isEmpty()) {
                     forwardedPath = target.basePath + (forwardedPath.startsWith("/") ? forwardedPath : "/" + forwardedPath);
@@ -183,7 +194,7 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
                     }
                 }
 
-                List<HeaderEntry> transformedEntries = lookup.transformRequestHeaders(entries, contextClaims);
+                List<HeaderEntry> transformedEntries = match.transformRequestHeaders(entries, contextClaims);
 
                 Set<String> hopByHop = ForwardingHeaders.hopByHopRequest(clientHeaders);
                 List<HttpHeader> outboundHeaders = new ArrayList<>(transformedEntries.size());
@@ -269,7 +280,7 @@ public final class RoutingReverseProxyHandler implements HttpHandler {
                     respEntries.add(new HeaderEntry(h.name(), h.value()));
                 }
 
-                List<HeaderEntry> transformedRespEntries = lookup.transformResponseHeaders(respEntries);
+                List<HeaderEntry> transformedRespEntries = match.transformResponseHeaders(respEntries);
 
                 Set<String> responseDropped = ForwardingHeaders.droppedFromResponse(upHeaders);
                 List<HttpHeader> responseHeaders = new ArrayList<>(transformedRespEntries.size());

@@ -16,6 +16,7 @@ import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpTypedResponse;
 import eu.exeris.kernel.spi.http.HttpVersion;
 import eu.exeris.sku.gateway.ByteArrayLoanedBuffer;
+import eu.exeris.sku.gateway.routing.RouteLookupPool;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -33,8 +34,8 @@ import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
  * {@code long} that lives in the call, not between calls, so a request that ends any way at all leaves
  * nothing behind.
  *
- * <p>The route is found with a {@link RouteLookup} that each thread keeps and reuses, so matching allocates
- * nothing in steady state. An admitted request allocates its guarded exchange; the outcome it reports is a
+ * <p>The route is found with a {@link RouteLookup} borrowed from a {@link RouteLookupPool} for the match alone,
+ * so matching allocates nothing in steady state and holds no lookup while the request is served. An admitted request allocates its guarded exchange; the outcome it reports is a
  * preallocated value for every status code.
  *
  * <p>A request that matches no route has no breaker: the number of breakers is bounded by the route table,
@@ -59,8 +60,8 @@ public final class CircuitBreakerIngress implements HttpHandler {
     private final CircuitBreakerRegistry registry;
     private final RequestRouter router;
     private final String[] excludedPaths;
-    /** One lookup per thread: a lookup is not thread-safe, and this class reads it before anything else matches. */
-    private final ThreadLocal<RouteLookup> lookups;
+    /** A lookup is not thread-safe: one is held for the match and given back before the request is served. */
+    private final RouteLookupPool lookups;
 
     /**
      * Creates the guard.
@@ -76,7 +77,7 @@ public final class CircuitBreakerIngress implements HttpHandler {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.router = Objects.requireNonNull(router, "router");
         this.excludedPaths = Set.copyOf(excludedPaths).toArray(String[]::new);
-        this.lookups = ThreadLocal.withInitial(router::newLookup);
+        this.lookups = new RouteLookupPool(router);
     }
 
     private static CallOutcome outcome(int statusCode) {
@@ -94,15 +95,23 @@ public final class CircuitBreakerIngress implements HttpHandler {
             delegate.handle(exchange);
             return;
         }
-        RouteLookup lookup = lookups.get();
-        if (!router.match(request.method() != null ? request.method().name() : null, path, lookup)) {
+        String routeId;
+        RouteLookup lookup = lookups.acquire();
+        try {
+            routeId = router.match(request.method() != null ? request.method().name() : null, path, lookup)
+                    ? lookup.route().id()
+                    : null;
+        } finally {
+            lookups.release(lookup);
+        }
+        if (routeId == null) {
             delegate.handle(exchange);
             return;
         }
 
         CircuitBreaker breaker;
         try {
-            breaker = registry.getOrCreate(lookup.route().id());
+            breaker = registry.getOrCreate(routeId);
         } catch (CircuitBreakerLimitExceededException e) {
             delegate.handle(exchange);
             return;

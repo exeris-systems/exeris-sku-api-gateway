@@ -20,11 +20,11 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@DisplayName("Route lookups are confined to the thread that matches")
-class RouteLookupConfinementTest {
+@DisplayName("A route lookup is held by one request at a time")
+class RouteLookupExclusivityTest {
 
-    private static final int THREADS = 8;
-    private static final int REQUESTS_PER_THREAD = 3_000;
+    private static final int THREADS = 64;
+    private static final int REQUESTS_PER_THREAD = 1_500;
 
     /** Answers with the authority it was asked to reach, so a caller can tell which route forwarded it. */
     private static final class EchoEngine implements HttpClientEngine {
@@ -55,7 +55,7 @@ class RouteLookupConfinementTest {
     }
 
     @Test
-    @DisplayName("Concurrent requests for different routes are each forwarded by their own route, through all three match sites")
+    @DisplayName("Concurrent requests on virtual threads for different routes are each forwarded by their own route, through all three match sites")
     void concurrentRequestsKeepTheirRoute() throws Exception {
         Map<String, String> env = Map.of(
                 "EXERIS_GATEWAY_ROUTES", "/alpha=http://alpha:1;/beta=http://beta:2,strip",
@@ -65,7 +65,7 @@ class RouteLookupConfinementTest {
             gateway.module().initialize();
             gateway.module().ready();
 
-            ExecutorService pool = Executors.newFixedThreadPool(THREADS);
+            ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor();
             try {
                 List<Future<Integer>> results = new java.util.ArrayList<>();
                 for (int t = 0; t < THREADS; t++) {
