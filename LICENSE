@@ -1,0 +1,54 @@
+EXERIS COMMERCIAL LICENSE
+Version 1.1, 2025-2026
+Copyright (C) 2025-2026 Exeris Systems. All rights reserved.
+
+This license governs the SKU composition:
+  - exeris-sku-api-gateway
+
+Contact legal@exeris.eu to obtain a commercial licence for production use.
+
+---
+
+This software and its associated source code and documentation files (the "Software")
+are made source-available by Exeris Systems ("Licensor") under the terms below.
+
+1. GRANT OF EVALUATION AND AUDIT LICENSE
+   Subject to the terms and conditions of this License, Licensor grants you a
+   limited, non-exclusive, non-transferable, royalty-free license to view, download,
+   compile, test, and evaluate the Software solely for internal evaluation, security
+   audit, benchmarking, and architectural inspection with Exeris platform components.
+
+2. PRODUCTION USE REQUIRES A COMMERCIAL LICENSE
+   Production use of the Software — whether directly, embedded into applications, or
+   as part of a platform deployment — requires an active Platform SKU subscription
+   or Platform-tier commercial subscription from Exeris Systems.
+   Deploying the Software in production environments without a valid subscription
+   constitutes a violation of this License. Contact legal@exeris.eu.
+
+3. CODE DETACHMENT
+   Customers who exercise the Code Detachment option under an active Platform SKU
+   subscription receive a perpetual, non-exclusive, non-transferable license to
+   operate, modify, and maintain the specific detached version of the Software within
+   their organization, pursuant to the terms of the Code Detachment Agreement.
+
+4. RESTRICTIONS
+   You may NOT, without the prior written consent of Licensor:
+   a) distribute, publish, sublicense, rent, lease, or lend the Software to any
+      third party outside your organization;
+   b) offer the Software as a hosted service, managed service, or SaaS/PaaS offering
+      competing with Exeris Systems products;
+   c) remove, alter, or obscure any proprietary notices, labels, or marks on the Software;
+   d) relicense or redistribute the Software under open-source licenses (including
+      GPL, Apache, MIT, or BSD) without explicit authorization.
+
+5. INTELLECTUAL PROPERTY
+   The Software, including all source code, object code, documentation, and any
+   modifications or derivatives, remains the intellectual property of Licensor.
+
+6. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL
+   LICENSOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN
+   AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF, OR IN
+   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
