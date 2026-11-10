@@ -1,6 +1,7 @@
 package eu.exeris.sku.gateway;
 
 import eu.exeris.kernel.spi.context.KernelProviders;
+import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
@@ -58,6 +59,29 @@ public final class KernelResponses {
         } finally {
             if (!built) {
                 buffer.close();
+            }
+        }
+    }
+
+    /**
+     * Builds a response carrying {@code body} and hands it to {@code exchange}.
+     *
+     * <p>Until {@code exchange.respond} returns normally the body is the caller's, so it is released when
+     * {@code respond} throws; after a normal return the engine owns it and it is never touched again.
+     * Closing is idempotent, so a body the engine already released stays released.
+     *
+     * @param headers headers without {@code Content-Length}
+     */
+    public static void respond(HttpExchange exchange, HttpStatus status, HttpVersion version,
+                               List<HttpHeader> headers, byte[] body) {
+        HttpResponse response = bytes(status, version, headers, body);
+        boolean handedOver = false;
+        try {
+            exchange.respond(response);
+            handedOver = true;
+        } finally {
+            if (!handedOver && response.body() != null) {
+                response.body().close();
             }
         }
     }

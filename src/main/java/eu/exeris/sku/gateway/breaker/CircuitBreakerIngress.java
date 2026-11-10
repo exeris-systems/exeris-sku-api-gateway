@@ -142,8 +142,8 @@ public final class CircuitBreakerIngress implements HttpHandler {
                 new HttpHeader("Retry-After", String.valueOf(retryAfterSec)),
                 new HttpHeader("X-Circuit-State", breaker.state().name()));
         HttpVersion version = exchange.request().version() != null ? exchange.request().version() : HttpVersion.HTTP_1_1;
-        exchange.respond(KernelResponses.bytes(HttpStatus.SERVICE_UNAVAILABLE, version, headers,
-                SERVICE_UNAVAILABLE_BODY));
+        KernelResponses.respond(exchange, HttpStatus.SERVICE_UNAVAILABLE, version, headers,
+                SERVICE_UNAVAILABLE_BODY);
     }
 
     private static final class GuardedExchange implements HttpExchange {

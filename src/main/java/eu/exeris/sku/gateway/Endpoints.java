@@ -103,6 +103,6 @@ final class Endpoints {
                 new HttpHeader("Content-Type", contentType),
                 new HttpHeader("Cache-Control", "no-store")
         );
-        ex.respond(KernelResponses.bytes(status, ex.request().version(), headers, bytes));
+        KernelResponses.respond(ex, status, ex.request().version(), headers, bytes);
     }
 }
