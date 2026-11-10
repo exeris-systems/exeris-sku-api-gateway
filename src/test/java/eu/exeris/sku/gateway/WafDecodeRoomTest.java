@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WafDecodeRoomTest {
 
     @Test
-    @DisplayName("A percent-encoded attack is refused using one borrow, returned, on a virtual thread")
+    @DisplayName("A percent-encoded attack is refused using two borrows, the decode room returned and the response body handed on, on a virtual thread")
     void borrowsFromTheBoundAllocator() throws Exception {
         RecyclingAllocator allocator = new RecyclingAllocator(2, 64 * 1_024);
         WafGatewayPolicy policy = new WafGatewayPolicy(WafPolicies.defaultCoreRules());
@@ -30,7 +30,11 @@ class WafDecodeRoomTest {
         thread.join();
 
         assertThat(result.get().isShortCircuit()).isTrue();
-        assertThat(allocator.borrows()).isEqualTo(1);
+        assertThat(allocator.borrows()).as("decode room and response body").isEqualTo(2);
+        assertThat(allocator.outstanding()).as("only the response body, which the engine releases").isEqualTo(1);
+        assertThat(result.get().response().body()).isNotNull();
+
+        result.get().response().body().close();
         assertThat(allocator.outstanding()).isZero();
     }
 

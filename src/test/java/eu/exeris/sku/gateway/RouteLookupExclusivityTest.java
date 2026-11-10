@@ -32,7 +32,7 @@ class RouteLookupExclusivityTest {
         public HttpResponse send(HttpRequest request) {
             return new HttpResponse(HttpStatus.OK, HttpVersion.HTTP_1_1,
                     List.of(new HttpHeader("X-Reached", request.authority() + request.path())),
-                    new ByteArrayLoanedBuffer("ok".getBytes(StandardCharsets.UTF_8)));
+                    TestBuffers.of("ok".getBytes(StandardCharsets.UTF_8)));
         }
 
         @Override

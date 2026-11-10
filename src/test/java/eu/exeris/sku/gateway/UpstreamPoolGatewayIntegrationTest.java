@@ -69,7 +69,7 @@ class UpstreamPoolGatewayIntegrationTest {
                         HttpStatus.OK,
                         HttpVersion.HTTP_1_1,
                         List.of(),
-                        new ByteArrayLoanedBuffer(resp)
+                        TestBuffers.of(resp)
                 );
             }
         };
@@ -131,7 +131,7 @@ class UpstreamPoolGatewayIntegrationTest {
                             HttpStatus.INTERNAL_SERVER_ERROR,
                             HttpVersion.HTTP_1_1,
                             List.of(),
-                            new ByteArrayLoanedBuffer(err)
+                            TestBuffers.of(err)
                     );
                 } else {
                     byte[] ok = "{\"status\":\"recovered\"}".getBytes(StandardCharsets.UTF_8);
@@ -139,7 +139,7 @@ class UpstreamPoolGatewayIntegrationTest {
                             HttpStatus.OK,
                             HttpVersion.HTTP_1_1,
                             List.of(),
-                            new ByteArrayLoanedBuffer(ok)
+                            TestBuffers.of(ok)
                     );
                 }
             }
@@ -183,7 +183,7 @@ class UpstreamPoolGatewayIntegrationTest {
                     throw new IllegalStateException("connection refused");
                 }
                 return new HttpResponse(HttpStatus.OK, HttpVersion.HTTP_1_1, List.of(),
-                        new ByteArrayLoanedBuffer("ok".getBytes(StandardCharsets.UTF_8)));
+                        TestBuffers.of("ok".getBytes(StandardCharsets.UTF_8)));
             }
         };
     }

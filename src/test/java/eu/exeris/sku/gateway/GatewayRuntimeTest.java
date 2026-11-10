@@ -262,9 +262,9 @@ class GatewayRuntimeTest {
         start("EXERIS_HTTP_MAX_REQUEST_BODY_BYTES", "16");
 
         TestExchange small = new TestExchange(eu.exeris.kernel.spi.http.HttpMethod.POST, "/api/x", List.of(),
-                new ByteArrayLoanedBuffer(new byte[16]));
+                TestBuffers.of(new byte[16]));
         TestExchange large = new TestExchange(eu.exeris.kernel.spi.http.HttpMethod.POST, "/api/x",
-                List.of(new HttpHeader("Content-Length", "1")), new ByteArrayLoanedBuffer(new byte[17]));
+                List.of(new HttpHeader("Content-Length", "1")), TestBuffers.of(new byte[17]));
         TestExchange declared = new TestExchange(eu.exeris.kernel.spi.http.HttpMethod.POST, "/api/x",
                 List.of(new HttpHeader("Content-Length", "999999")));
         gateway.ingress().handle(small);
