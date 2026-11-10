@@ -13,7 +13,7 @@ import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
-import eu.exeris.sku.gateway.ByteArrayLoanedBuffer;
+import eu.exeris.sku.gateway.KernelResponses;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -113,16 +113,14 @@ public final class WafGatewayPolicy implements GatewayPolicy {
                     new HttpHeader("Content-Type", "application/json"),
                     new HttpHeader("X-WAF-Blocked", "true"),
                     new HttpHeader("X-WAF-Category", category),
-                    new HttpHeader("X-WAF-Rule", ruleId),
-                    new HttpHeader("Content-Length", String.valueOf(bodyBytes.length))
+                    new HttpHeader("X-WAF-Rule", ruleId)
             );
 
-            HttpResponse response403 = new HttpResponse(
+            HttpResponse response403 = KernelResponses.bytes(
                     HttpStatus.FORBIDDEN,
                     req.version() != null ? req.version() : HttpVersion.HTTP_1_1,
                     respHeaders,
-                    new ByteArrayLoanedBuffer(bodyBytes)
-            );
+                    bodyBytes);
             return PolicyResult.shortCircuit(response403);
         }
 
