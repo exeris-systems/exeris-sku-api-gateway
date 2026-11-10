@@ -1,5 +1,6 @@
 package eu.exeris.sku.gateway;
 
+import eu.exeris.kernel.spi.contract.EntitlementClass;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 import eu.exeris.kernel.tck.contract.AbstractEntitlementRequirementTck;
 import org.junit.jupiter.api.DisplayName;
@@ -34,5 +35,16 @@ class ApiGatewaySkuEntitlementTest extends AbstractEntitlementRequirementTck {
     void requiresOnlyItsOwnCapability() {
         assertThat(new ApiGatewaySkuEntitlement().requiredCapabilities()).containsExactly("exeris-sku-api-gateway");
         assertThat(ApiGatewaySkuEntitlement.CAPABILITY_ID).isEqualTo("exeris-sku-api-gateway");
+    }
+
+    @Test
+    @DisplayName("It declares the COMMERCIAL entitlement class, stable across calls")
+    void entitlementClassIsCommercialAndStable() {
+        ApiGatewaySkuEntitlement entitlement = new ApiGatewaySkuEntitlement();
+        EntitlementClass first = entitlement.entitlementClass();
+
+        assertThat(first).isEqualTo(EntitlementClass.COMMERCIAL);
+        assertThat(entitlement.entitlementClass()).isSameAs(first);
+        assertThat(new ApiGatewaySkuEntitlement().entitlementClass()).isEqualTo(EntitlementClass.COMMERCIAL);
     }
 }
