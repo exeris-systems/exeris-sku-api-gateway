@@ -6,6 +6,7 @@ import eu.exeris.kernel.spi.http.HttpHeader;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.memory.AllocationHint;
 import eu.exeris.kernel.spi.memory.LoanedBuffer;
 import eu.exeris.kernel.spi.memory.MemoryAllocator;
 
@@ -22,12 +23,45 @@ import java.util.Objects;
  * engine owns and releases it. {@link #bytes} therefore releases the buffer on every path that does not
  * return its response, and never touches it after returning.
  *
+ * <p>A body that fits one of the size hints is written into a buffer from
+ * {@link MemoryAllocator#allocate(AllocationHint)}, using the smallest hint that holds it. Only a body
+ * larger than the largest hint falls back to {@link MemoryAllocator#allocateNetwork(int)}: the responses
+ * built here include metrics and dashboard exports whose size grows with the number of routes and series
+ * and has no fixed bound. A buffer's capacity may exceed the body; only {@code size()} bytes are sent, and
+ * no byte of the buffer is assumed to be zero.
+ *
  * <p>No {@code Content-Length} is set: the engine derives it from the buffer size. A body-less response
  * allocates nothing.
  */
 public final class KernelResponses {
 
+    /** Body-capable hints in ascending {@code sizeBytes()} order. */
+    private static final AllocationHint[] BODY_HINTS = {
+            AllocationHint.MICRO,
+            AllocationHint.SMALL,
+            AllocationHint.MEDIUM,
+            AllocationHint.STREAMING_CHUNK,
+            AllocationHint.NETWORK_FRAME,
+            AllocationHint.JUMBO
+    };
+
     private KernelResponses() {
+    }
+
+    /**
+     * Returns the smallest hint whose {@link AllocationHint#sizeBytes()} is at least {@code length}, or
+     * {@code null} when {@code length} exceeds the largest hint. {@code SESSION} is never chosen: it is
+     * reserved for per-session context.
+     *
+     * @param length body length in bytes, not negative
+     */
+    static AllocationHint hintFor(int length) {
+        for (AllocationHint hint : BODY_HINTS) {
+            if (length <= hint.sizeBytes()) {
+                return hint;
+            }
+        }
+        return null;
     }
 
     /**
@@ -44,7 +78,8 @@ public final class KernelResponses {
             return HttpResponse.noBody(status, version, headers);
         }
         MemoryAllocator allocator = KernelProviders.allocator();
-        LoanedBuffer buffer = allocator.allocateNetwork(body.length);
+        AllocationHint hint = hintFor(body.length);
+        LoanedBuffer buffer = hint != null ? allocator.allocate(hint) : allocator.allocateNetwork(body.length);
         boolean built = false;
         try {
             if (buffer.capacity() < body.length) {
