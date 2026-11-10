@@ -20,6 +20,7 @@ final class RecyclingAllocator implements MemoryAllocator {
     private final AtomicReferenceArray<Buffer> free;
     private final AtomicInteger outstanding = new AtomicInteger();
     private final AtomicInteger borrows = new AtomicInteger();
+    private final AtomicInteger networkBorrows = new AtomicInteger();
     private final int capacity;
 
     RecyclingAllocator(int buffers, int capacity) {
@@ -34,12 +35,22 @@ final class RecyclingAllocator implements MemoryAllocator {
         return outstanding.get();
     }
 
+    /** Borrows made through {@code allocateNetwork}, as opposed to {@code allocate(AllocationHint)}. */
+    int networkBorrows() {
+        return networkBorrows.get();
+    }
+
     int borrows() {
         return borrows.get();
     }
 
     @Override
     public LoanedBuffer allocateNetwork(int estimatedBytes) {
+        networkBorrows.incrementAndGet();
+        return borrow(estimatedBytes);
+    }
+
+    private LoanedBuffer borrow(int estimatedBytes) {
         if (estimatedBytes > capacity) {
             throw new IllegalArgumentException("a buffer holds " + capacity + " bytes, asked for " + estimatedBytes);
         }
@@ -67,17 +78,17 @@ final class RecyclingAllocator implements MemoryAllocator {
 
     @Override
     public LoanedBuffer allocate(AllocationHint hint) {
-        return allocateNetwork(hint.sizeBytes());
+        return borrow(hint.sizeBytes());
     }
 
     @Override
     public LoanedBuffer allocateCarrierSlab(int carrierIndex) {
-        return allocateNetwork(capacity);
+        return borrow(capacity);
     }
 
     @Override
     public LoanedBuffer allocateInfrastructure(long sizeBytes) {
-        return allocateNetwork((int) sizeBytes);
+        return borrow((int) sizeBytes);
     }
 
     @Override

@@ -423,6 +423,20 @@ class ResponseSitesTest {
         assertThat(allocator.finalReleases()).isEqualTo(allocator.allocations());
         assertThat(allocator.outstanding()).isZero();
         allocator.buffers().forEach(b -> assertThat(b.closeCalls()).as("close calls on a handle").isEqualTo(1));
+        assertBodiesFromHints(allocator);
+    }
+
+    /**
+     * A response body that fits a hint comes from allocate(hint), never from a byte-sized request. The only
+     * byte-sized request a site may make is the WAF's scratch room for decoding, which is not a response body,
+     * so at most one is tolerated and every response body is accounted for by a hint.
+     */
+    private static void assertBodiesFromHints(TrackingAllocator allocator) {
+        assertThat(allocator.hints()).as("hints used for response bodies")
+                .isNotEmpty()
+                .doesNotContain(eu.exeris.kernel.spi.memory.AllocationHint.SESSION);
+        assertThat(allocator.requested()).as("allocateNetwork estimates other than a WAF decode room")
+                .hasSizeLessThanOrEqualTo(1);
     }
 
     private static void assertNothingOutstandingAndNoRedundantClose(TrackingAllocator allocator) {
@@ -430,6 +444,7 @@ class ResponseSitesTest {
         assertThat(allocator.outstanding()).as("buffers neither released nor handed on").isZero();
         assertThat(allocator.finalReleases()).isEqualTo(allocator.allocations());
         allocator.buffers().forEach(b -> assertThat(b.closeCalls()).as("close calls on a handle").isLessThanOrEqualTo(2));
+        assertBodiesFromHints(allocator);
     }
 
     private static void assertContentLengthAbsentOrExact(EngineExchange ex, int length) {

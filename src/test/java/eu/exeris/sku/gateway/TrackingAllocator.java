@@ -24,8 +24,31 @@ final class TrackingAllocator implements MemoryAllocator {
     private final List<CountingBuffer> buffers = Collections.synchronizedList(new ArrayList<>());
     private final List<Integer> requested = Collections.synchronizedList(new ArrayList<>());
 
+    private final List<AllocationHint> hints = Collections.synchronizedList(new ArrayList<>());
+    private final Byte fill;
+    private final int networkForbiddenUpTo;
+
     TrackingAllocator(MemoryAllocator base) {
+        this(base, null, 0);
+    }
+
+    /**
+     * @param fill                 when not null, every borrowed buffer is filled with this byte over its whole
+     *                             capacity before it is handed out, so that a write relying on zeroed memory shows
+     * @param networkForbiddenUpTo {@code allocateNetwork} with an estimate up to this many bytes fails the caller
+     *                             with an {@link AssertionError}: such a size is served by {@code allocate(hint)}
+     */
+    TrackingAllocator(MemoryAllocator base, Byte fill, int networkForbiddenUpTo) {
         this.base = base;
+        this.fill = fill;
+        this.networkForbiddenUpTo = networkForbiddenUpTo;
+    }
+
+    /** Hints passed to {@code allocate(AllocationHint)}, in order. */
+    List<AllocationHint> hints() {
+        synchronized (hints) {
+            return List.copyOf(hints);
+        }
     }
 
     int allocations() {
@@ -46,6 +69,7 @@ final class TrackingAllocator implements MemoryAllocator {
         }
     }
 
+    /** Estimates passed to {@code allocateNetwork(int)}, in order. */
     List<Integer> requested() {
         synchronized (requested) {
             return List.copyOf(requested);
@@ -72,7 +96,16 @@ final class TrackingAllocator implements MemoryAllocator {
     @Override
     public LoanedBuffer allocateNetwork(int estimatedBytes) {
         requested.add(estimatedBytes);
-        LoanedBuffer real = base.allocateNetwork(estimatedBytes);
+        if (estimatedBytes <= networkForbiddenUpTo) {
+            throw new AssertionError("allocateNetwork(" + estimatedBytes + ") where allocate(hint) applies");
+        }
+        return track(base.allocateNetwork(estimatedBytes));
+    }
+
+    private LoanedBuffer track(LoanedBuffer real) {
+        if (fill != null) {
+            real.segment().asSlice(0, real.capacity()).fill(fill);
+        }
         real.addCloseAction(finalReleases::incrementAndGet);
         allocations.incrementAndGet();
         CountingBuffer counting = new CountingBuffer(real);
@@ -82,7 +115,14 @@ final class TrackingAllocator implements MemoryAllocator {
 
     @Override
     public LoanedBuffer allocate(AllocationHint hint) {
-        return allocateNetwork(hint.sizeBytes());
+        hints.add(hint);
+        LoanedBuffer real = base.allocate(hint);
+        if (real.capacity() < hint.sizeBytes()) {
+            real.close();
+            throw new AssertionError("allocator broke its contract: capacity " + real.capacity()
+                    + " for " + hint);
+        }
+        return track(real);
     }
 
     @Override

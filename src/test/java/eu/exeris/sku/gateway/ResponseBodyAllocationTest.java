@@ -50,8 +50,39 @@ class ResponseBodyAllocationTest {
 
         assertThat(allocator.outstanding()).as("every borrow was returned").isZero();
         assertThat(allocator.borrows()).isEqualTo(WARMUP + MEASURED);
+        assertThat(allocator.networkBorrows()).as("a body that fits a hint is not requested by size").isZero();
         assertThat(perResponse[0]).as("bytes allocated per response, body is " + BODY_LENGTH)
                 .isLessThan(BODY_LENGTH / 8);
+    }
+
+    @Test
+    @DisplayName("Per-response heap allocation does not grow with the body length")
+    void heapAllocationIndependentOfBodyLength() {
+        ThreadMXBean threads = (ThreadMXBean) ManagementFactory.getThreadMXBean();
+        threads.setThreadAllocatedMemoryEnabled(true);
+        RecyclingAllocator allocator = new RecyclingAllocator(2, BODY_LENGTH);
+        byte[] small = new byte[600];
+        byte[] large = new byte[BODY_LENGTH];
+
+        long[] perResponse = new long[2];
+        ScopedValueRunner.run(allocator, () -> {
+            byte[][] bodies = {small, large};
+            for (int k = 0; k < 2; k++) {
+                for (int i = 0; i < WARMUP; i++) {
+                    respond(bodies[k]);
+                }
+                long threadId = Thread.currentThread().threadId();
+                long before = threads.getThreadAllocatedBytes(threadId);
+                for (int i = 0; i < MEASURED; i++) {
+                    respond(bodies[k]);
+                }
+                perResponse[k] = (threads.getThreadAllocatedBytes(threadId) - before) / MEASURED;
+            }
+        });
+
+        assertThat(allocator.networkBorrows()).isZero();
+        assertThat(perResponse[1] - perResponse[0]).as("extra heap bytes per response for a body 27x longer")
+                .isLessThan(256);
     }
 
     @Test
