@@ -13,9 +13,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -31,6 +33,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DisplayName("GatewaySkuApplication in a process")
 class GatewayProcessIT {
 
+    /** What the kernel reads; set only on a gateway process that is expected to start. */
+    private static final String LICENCE_PATH_VARIABLE = "EXERIS_LICENSE_MANIFEST_PATH";
+    /**
+     * Where the test run is told the developer licence is. It is a name of its own so that the test JVM,
+     * whose in-process licence tests need a kernel with no manifest, does not see one.
+     */
+    private static final String DEVELOPER_LICENCE_VARIABLE = "EXERIS_DEV_LICENSE_MANIFEST_PATH";
+
     private Process process;
     private HttpServer upstream;
     private final HttpClient client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)
@@ -44,6 +54,23 @@ class GatewayProcessIT {
         if (upstream != null) {
             upstream.stop(0);
         }
+    }
+
+    /**
+     * Environment for a gateway that is expected to start. Every composed commercial capability declares an
+     * entitlement requirement, and the kernel refuses to boot such a process without a licence manifest in
+     * every environment, so these tests need a developer licence and say so when it is missing.
+     */
+    private static Map<String, String> licensed(Map<String, String> env) {
+        String manifest = System.getenv(DEVELOPER_LICENCE_VARIABLE);
+        if (manifest == null || manifest.isBlank() || !Files.isRegularFile(Path.of(manifest))) {
+            throw new AssertionError(DEVELOPER_LICENCE_VARIABLE + " must name a developer licence manifest that lists "
+                    + "exeris-sku-api-gateway and every composed commercial capability; the gateway process "
+                    + "does not start without one");
+        }
+        Map<String, String> licensed = new HashMap<>(env);
+        licensed.put(LICENCE_PATH_VARIABLE, manifest);
+        return licensed;
     }
 
     private static int freePort() throws IOException {
@@ -61,6 +88,7 @@ class GatewayProcessIT {
         cmd.add("eu.exeris.sku.gateway.GatewaySkuApplication");
         ProcessBuilder pb = new ProcessBuilder(cmd).redirectErrorStream(true);
         pb.redirectOutput(new java.io.File(System.getProperty("java.io.tmpdir"), "gateway-it-" + System.nanoTime() + ".log"));
+        pb.environment().remove(LICENCE_PATH_VARIABLE);
         pb.environment().putAll(env);
         return pb.start();
     }
@@ -108,13 +136,13 @@ class GatewayProcessIT {
 
         int ingress = freePort();
         int management = freePort();
-        process = launch(Map.of(
+        process = launch(licensed(Map.of(
                 "EXERIS_HTTP_BIND_HOST", "127.0.0.1",
                 "EXERIS_HTTP_PORT", String.valueOf(ingress),
                 "EXERIS_GATEWAY_ROUTES", "/api=http://127.0.0.1:" + upstream.getAddress().getPort(),
                 "EXERIS_OBSERVABILITY_ENABLED", "true",
                 "EXERIS_MANAGEMENT_ENABLED", "true",
-                "EXERIS_MANAGEMENT_PORT", String.valueOf(management)));
+                "EXERIS_MANAGEMENT_PORT", String.valueOf(management))));
         awaitHealthy(ingress);
 
         HttpResponse<String> proxied = get(ingress, "/api/ping",
@@ -145,11 +173,11 @@ class GatewayProcessIT {
         upstream.start();
 
         int ingress = freePort();
-        process = launch(Map.of(
+        process = launch(licensed(Map.of(
                 "EXERIS_HTTP_BIND_HOST", "127.0.0.1",
                 "EXERIS_HTTP_PORT", String.valueOf(ingress),
                 "EXERIS_HTTP_MAX_REQUEST_BODY_BYTES", "1024",
-                "EXERIS_GATEWAY_ROUTES", "/api=http://127.0.0.1:" + upstream.getAddress().getPort()));
+                "EXERIS_GATEWAY_ROUTES", "/api=http://127.0.0.1:" + upstream.getAddress().getPort())));
         awaitHealthy(ingress);
 
         HttpRequest small = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + ingress + "/api/in"))
@@ -182,11 +210,11 @@ class GatewayProcessIT {
                 }
             });
             int ingress = freePort();
-            process = launch(Map.of(
+            process = launch(licensed(Map.of(
                     "EXERIS_HTTP_BIND_HOST", "127.0.0.1",
                     "EXERIS_HTTP_PORT", String.valueOf(ingress),
                     "EXERIS_UPSTREAM_TIMEOUT_MS", "1000",
-                    "EXERIS_GATEWAY_ROUTES", "/api=http://127.0.0.1:" + silent.getLocalPort()));
+                    "EXERIS_GATEWAY_ROUTES", "/api=http://127.0.0.1:" + silent.getLocalPort())));
             awaitHealthy(ingress);
 
             long start = System.nanoTime();

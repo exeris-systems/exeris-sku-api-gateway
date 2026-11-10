@@ -87,7 +87,7 @@ The JWKS is fetched by the `jwt-validation` capability, not by the gateway, with
 
 The metrics and dashboard endpoints exist only when `EXERIS_OBSERVABILITY_ENABLED` is also true. The management listener has no admission of its own, and its paths are never in the JWT bypass list because they are never on the ingress.
 
-**Licence.** The SKU and each composed commercial capability declare an entitlement requirement. The kernel reads the environment from `EXERIS_ENVIRONMENT`; in a production class it refuses to start unless `EXERIS_LICENSE_MANIFEST_PATH` (or a `license-manifest.json` in the working directory) names a signed manifest that lists `exeris-sku-api-gateway` and every composed commercial capability. `cors-policy` is community and needs no entry.
+**Licence.** The SKU and each composed commercial capability declare an entitlement requirement. The kernel refuses to start, in every environment, unless `EXERIS_LICENSE_MANIFEST_PATH` (or a `license-manifest.json` in the working directory) names a signed manifest that lists `exeris-sku-api-gateway` and every composed commercial capability. A manifest is valid only in the environments its signing key covers, and the kernel reads the environment from `EXERIS_ENVIRONMENT`: local development and CI run under a developer licence, which is limited to the development environment, 50 requests per second and 10 connections. The process tests take theirs from `EXERIS_DEV_LICENSE_MANIFEST_PATH` and fail when it is not set. `cors-policy` is community and needs no entry.
 
 **TLS is not provided**, in either direction. The gateway listens in plaintext and its upstream connections are plaintext, so an `https://` upstream is refused at start. Terminate TLS in front of it and keep the upstreams on a trusted network. The gateway sets no TLS property on the kernel.
 
@@ -102,7 +102,7 @@ mvn verify
 mvn package -DskipTests && docker build -t exeris-sku-api-gateway .
 ```
 
-`exeris-sdk` 0.13.3, `exeris-kernel` 0.13.1 and `exeris-tooling` 0.11.0 resolve from Maven Central. The ten `exeris-caps-*` modules the build needs (the nine composed ones and `service-boundary-core`, which `gateway-core`'s build uses) are published nowhere, so they are built from source and installed first, with `.github/maven-settings.xml` and a token with `read:packages` for a capability whose build still resolves a kernel snapshot from GitHub Packages. `.github/workflows/build.yml` shows the order. The Dockerfile packages the built jar rather than building inside the image for the same reason.
+`exeris-sdk` 0.13.3, `exeris-kernel` 0.13.1 and `exeris-tooling` 0.11.0 resolve from Maven Central. The ten `exeris-caps-*` modules the build needs (the nine composed ones and `service-boundary-core`, which `gateway-core`'s build uses) are published nowhere, so they are built from source and installed first; no token is needed. `.github/workflows/build.yml` shows the order. The Dockerfile packages the built jar rather than building inside the image for the same reason.
 
 ## Documentation
 
