@@ -72,7 +72,7 @@ class RateLimitGatewayPolicyIntegrationTest {
                     HttpStatus.OK,
                     HttpVersion.HTTP_1_1,
                     List.of(new HttpHeader("Content-Type", "application/json")),
-                    new ByteArrayLoanedBuffer(bodyBytes)
+                    TestBuffers.of(bodyBytes)
             ));
         });
 

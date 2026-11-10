@@ -16,7 +16,7 @@ import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpTypedResponse;
 import eu.exeris.kernel.spi.http.HttpVersion;
-import eu.exeris.sku.gateway.ByteArrayLoanedBuffer;
+import eu.exeris.sku.gateway.KernelResponses;
 import eu.exeris.sku.gateway.routing.RouteLookupPool;
 
 import java.nio.charset.StandardCharsets;
@@ -140,11 +140,10 @@ public final class CircuitBreakerIngress implements HttpHandler {
         List<HttpHeader> headers = List.of(
                 new HttpHeader("Content-Type", "application/json"),
                 new HttpHeader("Retry-After", String.valueOf(retryAfterSec)),
-                new HttpHeader("X-Circuit-State", breaker.state().name()),
-                new HttpHeader("Content-Length", String.valueOf(SERVICE_UNAVAILABLE_BODY.length)));
+                new HttpHeader("X-Circuit-State", breaker.state().name()));
         HttpVersion version = exchange.request().version() != null ? exchange.request().version() : HttpVersion.HTTP_1_1;
-        exchange.respond(new HttpResponse(HttpStatus.SERVICE_UNAVAILABLE, version, headers,
-                new ByteArrayLoanedBuffer(SERVICE_UNAVAILABLE_BODY)));
+        KernelResponses.respond(exchange, HttpStatus.SERVICE_UNAVAILABLE, version, headers,
+                SERVICE_UNAVAILABLE_BODY);
     }
 
     private static final class GuardedExchange implements HttpExchange {

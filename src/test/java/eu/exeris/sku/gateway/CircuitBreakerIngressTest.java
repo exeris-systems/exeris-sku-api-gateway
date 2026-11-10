@@ -80,7 +80,7 @@ class CircuitBreakerIngressTest {
                     status,
                     HttpVersion.HTTP_1_1,
                     List.of(new HttpHeader("Content-Type", "application/json")),
-                    new ByteArrayLoanedBuffer(bytes)
+                    TestBuffers.of(bytes)
             ));
         });
 

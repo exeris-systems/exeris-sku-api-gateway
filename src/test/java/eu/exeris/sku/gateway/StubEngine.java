@@ -6,6 +6,7 @@ import eu.exeris.kernel.spi.http.HttpRequest;
 import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
 import eu.exeris.kernel.spi.http.HttpVersion;
+import eu.exeris.kernel.spi.memory.LoanedBuffer;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,11 +16,11 @@ import java.util.function.Function;
 final class StubEngine implements HttpClientEngine {
 
     final List<HttpRequest> requests = new ArrayList<>();
-    final List<ByteArrayLoanedBuffer> bodies = new ArrayList<>();
+    final List<LoanedBuffer> bodies = new ArrayList<>();
     Function<HttpRequest, HttpResponse> answer = r -> ok();
 
-    ByteArrayLoanedBuffer newBody() {
-        ByteArrayLoanedBuffer b = new ByteArrayLoanedBuffer("ok".getBytes());
+    LoanedBuffer newBody() {
+        LoanedBuffer b = TestBuffers.of("ok".getBytes());
         bodies.add(b);
         return b;
     }

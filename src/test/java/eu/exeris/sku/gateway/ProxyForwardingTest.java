@@ -160,7 +160,7 @@ class ProxyForwardingTest {
         engine.answer = r -> engine.response(HttpStatus.INTERNAL_SERVER_ERROR);
         RoutingReverseProxyHandler handler =
                 new RoutingReverseProxyHandler(router("cluster://pool"), engine, pool(), true, false);
-        TestExchange ex = new TestExchange(HttpMethod.POST, "/api/pay", List.of(), new ByteArrayLoanedBuffer("x".getBytes()));
+        TestExchange ex = new TestExchange(HttpMethod.POST, "/api/pay", List.of(), TestBuffers.of("x".getBytes()));
 
         handler.handle(ex);
 

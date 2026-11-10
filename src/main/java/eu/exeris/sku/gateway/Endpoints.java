@@ -6,9 +6,7 @@ import eu.exeris.caps.observability.api.GatewayObservabilityService;
 import eu.exeris.kernel.spi.http.HttpExchange;
 import eu.exeris.kernel.spi.http.HttpHandler;
 import eu.exeris.kernel.spi.http.HttpHeader;
-import eu.exeris.kernel.spi.http.HttpResponse;
 import eu.exeris.kernel.spi.http.HttpStatus;
-import eu.exeris.kernel.spi.http.HttpVersion;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
@@ -103,9 +101,8 @@ final class Endpoints {
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
         List<HttpHeader> headers = List.of(
                 new HttpHeader("Content-Type", contentType),
-                new HttpHeader("Content-Length", String.valueOf(bytes.length)),
                 new HttpHeader("Cache-Control", "no-store")
         );
-        ex.respond(new HttpResponse(status, HttpVersion.HTTP_1_1, headers, new ByteArrayLoanedBuffer(bytes)));
+        KernelResponses.respond(ex, status, ex.request().version(), headers, bytes);
     }
 }
