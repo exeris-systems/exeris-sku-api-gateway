@@ -38,9 +38,9 @@
         <!-- JDK 25 LTS, matching the ecosystem baseline. Deliberately no preview flag anywhere. -->
         <maven.compiler.release>25</maven.compiler.release>
 
-        <exeris.sdk.version>0.12.0</exeris.sdk.version>
-        <exeris.kernel.version>0.13.0-SNAPSHOT</exeris.kernel.version>
-        <exeris.tooling.version>0.10.0</exeris.tooling.version>
+        <exeris.sdk.version>0.13.3</exeris.sdk.version>
+        <exeris.kernel.version>0.13.1</exeris.kernel.version>
+        <exeris.tooling.version>0.11.0</exeris.tooling.version>
 
         <junit.version>6.1.3</junit.version>
         <assertj.version>3.27.7</assertj.version>

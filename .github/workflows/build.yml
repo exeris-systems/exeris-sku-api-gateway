@@ -32,23 +32,6 @@ jobs:
         with:
           path: exeris-sku-api-gateway
 
-      # The SDK and the codegen chain are not published to a Maven repository, so both are built
-      # from source at the release tag matching the version in pom.xml. An immutable ref keeps an
-      # unrelated upstream commit from turning this build red.
-      - name: Checkout exeris-sdk (v0.12.0 — matches exeris.sdk.version in the POM)
-        uses: actions/checkout@v7
-        with:
-          repository: exeris-systems/exeris-sdk
-          ref: v0.12.0
-          path: exeris-sdk
-
-      - name: Checkout exeris-tooling (v0.10.0 — matches exeris.tooling.version in the POM)
-        uses: actions/checkout@v7
-        with:
-          repository: exeris-systems/exeris-tooling
-          ref: v0.10.0
-          path: exeris-tooling
-
       # The composed capabilities are at 0.1.0-SNAPSHOT and published nowhere, so each is built from its
       # default branch; a change there can turn this build red. exeris-caps-service-boundary-core is a
       # test-scope dependency of gateway-core's build.
@@ -128,19 +111,6 @@ jobs:
             echo "::error::PACKAGES_READ_TOKEN is not set, so exeris-kernel cannot be resolved from GitHub Packages"
             exit 1
           fi
-
-      # japicmp.skip: the SDK binds a semver gate to verify whose baseline is the previous release
-      # jar, which a runner cannot resolve. That gate belongs to the SDK's own CI.
-      - name: Install exeris-sdk to the local repository
-        working-directory: exeris-sdk
-        run: mvn -B -ntp -DskipTests -Djapicmp.skip=true install
-
-      # An allowlist, not the whole reactor: exeris-e2e-tests declares the kernel at test scope, and
-      # -am does not follow BOM imports, so exeris-tooling-bom is named explicitly. The plugin brings
-      # exeris-codegen-core, which the composition-manifest test reads.
-      - name: Install the codegen chain to the local repository
-        working-directory: exeris-tooling
-        run: mvn -B -ntp -DskipTests install -pl exeris-tooling-bom,exeris-processor,exeris-codegen-maven-plugin -am
 
       # Two passes per capability, and the first is not redundant: exeris:generate runs at
       # generate-sources, but the processor writes the capability metadata it reads only during compile.

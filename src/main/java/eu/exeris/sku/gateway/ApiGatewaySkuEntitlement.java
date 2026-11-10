@@ -1,5 +1,6 @@
 package eu.exeris.sku.gateway;
 
+import eu.exeris.kernel.spi.contract.EntitlementClass;
 import eu.exeris.kernel.spi.contract.EntitlementRequirement;
 
 import java.util.Set;
@@ -31,5 +32,19 @@ public final class ApiGatewaySkuEntitlement implements EntitlementRequirement {
     @Override
     public Set<String> requiredCapabilities() {
         return REQUIRED;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>Returns {@link EntitlementClass#COMMERCIAL} on every invocation. The return value is invariant,
+     * non-null, and stable across calls as required by the {@link EntitlementRequirement} contract.
+     * The SKU is {@code commercial} under ADR-023.
+     *
+     * @return {@link EntitlementClass#COMMERCIAL}
+     */
+    @Override
+    public EntitlementClass entitlementClass() {
+        return EntitlementClass.COMMERCIAL;
     }
 }

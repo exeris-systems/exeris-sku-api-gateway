@@ -2,7 +2,7 @@
 
 The API Gateway Platform SKU: a composition of Exeris capabilities that runs as a reverse proxy directly on the Exeris kernel's HTTP subsystem, with no Spring Framework, servlet container or Netty in the data plane.
 
-Status: proof of concept, built against `exeris-kernel` 0.13.0-SNAPSHOT on JDK 25 LTS. Nothing here is stable and no artefact has been published.
+Status: proof of concept, built against `exeris-kernel` 0.13.1 on JDK 25 LTS. Nothing here is stable and no artefact has been published.
 
 ## Where it sits
 
@@ -102,7 +102,7 @@ mvn verify
 mvn package -DskipTests && docker build -t exeris-sku-api-gateway .
 ```
 
-The upstreams are not on Maven Central. The ten `exeris-caps-*` modules the build needs (the nine composed ones and `service-boundary-core`, which `gateway-core`'s build uses) and `exeris-sdk` are built from source and installed first, `exeris-tooling` supplies the codegen chain, and `exeris-kernel` 0.13.0-SNAPSHOT is resolved from GitHub Packages, which needs a token with `read:packages`. `.github/workflows/build.yml` shows the order. The Dockerfile packages the built jar rather than building inside the image for the same reason.
+`exeris-sdk` 0.13.3, `exeris-kernel` 0.13.1 and `exeris-tooling` 0.11.0 resolve from Maven Central. The ten `exeris-caps-*` modules the build needs (the nine composed ones and `service-boundary-core`, which `gateway-core`'s build uses) are published nowhere, so they are built from source and installed first, with `.github/maven-settings.xml` and a token with `read:packages` for a capability whose build still resolves a kernel snapshot from GitHub Packages. `.github/workflows/build.yml` shows the order. The Dockerfile packages the built jar rather than building inside the image for the same reason.
 
 ## Documentation
 
